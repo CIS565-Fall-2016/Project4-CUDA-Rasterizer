@@ -48,12 +48,12 @@ namespace {
 		 TextureData* dev_diffuseTex = NULL;
 		// int texWidth, texHeight;
 		// ...
-	};
+	}; // HELP: what is this struct for?
 
 	struct Primitive {
 		PrimitiveType primitiveType = Triangle;	// C++ 11 init
 		VertexOut v[3];
-	};
+	}; // HELP: since eyePos, etc. are the same across Vertices, why are they in ever VertexOut struct?
 
 	struct Fragment {
 		glm::vec3 color;
@@ -67,7 +67,7 @@ namespace {
 		// VertexAttributeTexcoord texcoord0;
 		// TextureData* dev_diffuseTex;
 		// ...
-	};
+	}; // HELP: what exactly is a fragment?
 
 	struct PrimitiveDevBufPointers {
 		int primitiveMode;	//from tinygltfloader macro
@@ -92,7 +92,7 @@ namespace {
 		VertexOut* dev_verticesOut;
 
 		// TODO: add more attributes when needed
-	};
+	}; // HELP: what is this doing?
 
 }
 
@@ -146,7 +146,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		// TODO: add your fragment shader code here
 
     }
-}
+} // HELP: what is the framebuffer? How do we decide what fragment colors get written?
 
 /**
  * Called once at the beginning of the program to allocate memory.
@@ -165,7 +165,7 @@ void rasterizeInit(int w, int h) {
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
 
 	checkCUDAError("rasterizeInit");
-}
+} // HELP: fragment vs. frame?
 
 __global__
 void initDepth(int w, int h, int * depth)
@@ -230,7 +230,7 @@ void _nodeMatrixTransform(
 		position[vid] = glm::vec3(MV * glm::vec4(position[vid], 1.0f));
 		normal[vid] = glm::normalize(MV_normal * normal[vid]);
 	}
-}
+} // HELP: What is MV?
 
 glm::mat4 getMatrixFromNodeMatrixVector(const tinygltf::Node & n) {
 	
@@ -290,7 +290,7 @@ void traverseNode (
 	for (; it != itEnd; ++it) {
 		traverseNode(n2m, scene, *it, M);
 	}
-}
+} // HELP: What is a node?
 
 void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
@@ -655,13 +655,12 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
-
+		int pid;
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 		// TODO: other primitive types (point, line)
 	}
