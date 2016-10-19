@@ -772,7 +772,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	// TODO: rasterize
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-  _rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
+  PROFILE_KERNEL( 
+    _rasterize, numBlocksForPrimitives, numThreadsPerBlock, 
+    totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
   checkCUDAError("Rasterization");
 
     // Copy depthbuffer colors into framebuffer
