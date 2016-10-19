@@ -54,6 +54,7 @@ namespace {
 		PrimitiveType primitiveType = Triangle;	// C++ 11 init
 		VertexOut v[3];
 		TextureData* dev_diffuseTex;
+    int texWidth, texHeight;
 	};
 
 	struct Fragment {
@@ -67,6 +68,7 @@ namespace {
 		glm::vec3 eyeNor;
 		VertexAttributeTexcoord texcoord0;
 		TextureData* dev_diffuseTex;
+    int texWidth, texHeight;
 		// ...
 	};
 
@@ -85,6 +87,7 @@ namespace {
 
 		// Materials, add more attributes when needed
 		TextureData* dev_diffuseTex;
+    int texWidth, texHeight;
 		// TextureData* dev_specularTex;
 		// TextureData* dev_normalTex;
 		// ...
@@ -143,10 +146,26 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
       
     const glm::vec3 lightVec = glm::normalize(glm::vec3(1, 3, 5));
 
-    if (x < w && y < h) {
+    if (x < w && y < h && x > 0 && y > 0) {
       // TODO: add your fragment shader code here
       if (fragmentBuffer[index].eyePos.z != 0) {
-        framebuffer[index] = glm::dot(lightVec, fragmentBuffer[index].eyeNor) * fragmentBuffer[index].eyeNor;
+        if (fragmentBuffer[index].dev_diffuseTex != NULL) {
+          int width = fragmentBuffer[index].texWidth;
+          int height = fragmentBuffer[index].texHeight;
+          int tx = fragmentBuffer[index].texcoord0.x * width;
+          int ty = fragmentBuffer[index].texcoord0.y * height;
+          int idx = tx + ty * width;
+
+          framebuffer[index] = glm::vec3(
+            (float)fragmentBuffer[index].dev_diffuseTex[idx] / 255.f,
+            (float)fragmentBuffer[index].dev_diffuseTex[idx + 1] / 255.f,
+            (float)fragmentBuffer[index].dev_diffuseTex[idx + 2] / 255.f
+            );
+          //framebuffer[index] = glm::vec3((float)tx / width, (float)ty / width, 0);
+        }
+        else {
+          framebuffer[index] = glm::dot(lightVec, fragmentBuffer[index].eyeNor) * fragmentBuffer[index].eyeNor;
+        }
       }
       else {
         framebuffer[index] = glm::vec3(0, 0, 0);
@@ -370,7 +389,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 				const tinygltf::Mesh & mesh = scene.meshes.at(*itMeshName);
 
 				auto res = mesh2PrimitivesMap.insert(std::pair<std::string, std::vector<PrimitiveDevBufPointers>>(mesh.name, std::vector<PrimitiveDevBufPointers>()));
-				std::vector<PrimitiveDevBufPointers> & primitiveVector = (res.first)->second;
+        std::vector<PrimitiveDevBufPointers> & primitiveVector = (res.first)->second;
 
 				// for each primitive
 				for (size_t i = 0; i < mesh.primitives.size(); i++) {
@@ -384,6 +403,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					VertexAttributePosition* dev_position;
 					VertexAttributeNormal* dev_normal;
 					VertexAttributeTexcoord* dev_texcoord0;
+          int texWidth;
+          int texHeight;
 
 					// ----------Indices-------------
 
@@ -542,8 +563,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 									cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 									
 									// TODO: store the image size to your PrimitiveDevBufPointers
-									// image.width;
-									// image.height;
+                  
+                  texWidth = image.width;
+                  texHeight = image.width;
 
 									checkCUDAError("Set Texture Image data");
 								}
@@ -584,6 +606,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						dev_texcoord0,
 
 						dev_diffuseTex,
+            texWidth,
+            texHeight,
 
 						dev_vertexOut	//VertexOut
 					});
@@ -675,6 +699,9 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
       // each .v is of length primitiveMode. if tries, the first three indices are the three items here
 			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
 				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+      dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
+      dev_primitives[pid + curPrimitiveBeginId].texWidth = primitive.texWidth;
+      dev_primitives[pid + curPrimitiveBeginId].texHeight = primitive.texHeight;
 		}
 
 
@@ -701,7 +728,6 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
           int z = INT_MAX * -getZAtCoordinate(bCoord, triangle);
           atomicMin(&depths[pix_idx], z);
           if (depths[pix_idx] == z) {
-            fragments[pix_idx].dev_diffuseTex = prim.dev_diffuseTex;
             fragments[pix_idx].eyeNor =
               bCoord.x * prim.v[0].eyeNor +
               bCoord.y * prim.v[1].eyeNor +
@@ -714,6 +740,9 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
               bCoord.x * prim.v[0].texcoord0 +
               bCoord.y * prim.v[1].texcoord0 +
               bCoord.z * prim.v[2].texcoord0;
+            fragments[pix_idx].dev_diffuseTex = prim.dev_diffuseTex;
+            fragments[pix_idx].texWidth = prim.texWidth;
+            fragments[pix_idx].texHeight = prim.texHeight;
           }
         }
       }
