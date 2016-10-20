@@ -21,7 +21,7 @@
 					<folderInfo id="com.nvidia.cuda.ide.toolchain.on_path.1673801701.1152097236" name="/" resourcePath="">
 						<toolChain id="com.nvidia.cuda.ide.toolchain.on_path.1386955599" name="CUDA Toolkit on the path" superClass="com.nvidia.cuda.ide.toolchain.on_path">
 							<targetPlatform archList="all" binaryParser="com.nvidia.cuda.ide.elf;com.nvidia.cuda.ide.macho;com.nvidia.cuda.ide.cubin" id="com.nvidia.cuda.ide.targetPlatform.853269530" isAbstract="false" name="Debug Platform" osList="linux,macosx" superClass="com.nvidia.cuda.ide.targetPlatform"/>
-							<builder id="com.nvidia.cuda.ide.builder.1635905474" incrementalBuildTarget="${ConfigName}" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="CUDA Toolkit 7.5 Builder" superClass="com.nvidia.cuda.ide.builder"/>
+							<builder buildPath="${workspace_loc:/Project4-CUDA-Rasterizer}/build/" id="com.nvidia.cuda.ide.builder.1635905474" incrementalBuildTarget="${ConfigName}" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="CUDA Toolkit 7.5 Builder" superClass="com.nvidia.cuda.ide.builder"/>
 							<tool id="nvcc.compiler.base.854769442" name="NVCC Compiler" superClass="nvcc.compiler.base">
 								<option id="nvcc.compiler.pic.1870261830" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
 								<inputType id="nvcc.compiler.input.cu.943232565" superClass="nvcc.compiler.input.cu"/>
@@ -186,9 +186,14 @@
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="DebugFast"/>
+		<configuration configurationName="DebugNDEBUG"/>
 		<configuration configurationName="Default">
 			<resource resourceType="PROJECT" workspacePath="/Project4-CUDA-Rasterizer"/>
 		</configuration>
+		<configuration configurationName="Debug"/>
+		<configuration configurationName="Release"/>
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
 </cproject>
