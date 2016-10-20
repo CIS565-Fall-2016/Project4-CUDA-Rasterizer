@@ -18,6 +18,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define PERSPECTIVE_CORRECT
+#define BILIN_INTERP
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -718,16 +721,42 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
     glm::vec3 triangle[3] = { glm::vec3(prim.v[0].pos),
                               glm::vec3(prim.v[1].pos), 
                               glm::vec3(prim.v[2].pos) };
+#ifdef PERSPECTIVE_CORRECT
+    float eye_zs[3] = { prim.v[0].eyePos.z, prim.v[1].eyePos.z, prim.v[2].eyePos.z };
+#endif
+
     AABB box = getAABBForTriangle(triangle);
     for (int x = box.min.x; x < box.max.x; ++x) {
       for (int y = box.min.y; y < box.max.y; ++y) {
         int pix_idx = x + y * width;
         glm::vec3 bCoord = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
         if (isBarycentricCoordInBounds(bCoord)) {
-          int z = INT_MAX * -getZAtCoordinate(bCoord, triangle);
-          atomicMin(&depths[pix_idx], z);
-          if (depths[pix_idx] == z) {
+
+          float z = getZAtCoordinate(bCoord, triangle);
+#ifdef PERSPECTIVE_CORRECT
+          float correct_z = getCorrectZAtCoordinate(bCoord, triangle, eye_zs);
+#endif
+          int intz = INT_MAX * -z;
+          atomicMin(&depths[pix_idx], intz);
+          if (depths[pix_idx] == intz) {
             Fragment &frag = fragments[pix_idx];
+#ifdef PERSPECTIVE_CORRECT
+            frag.eyeNor = correct_z * (
+              bCoord.x * prim.v[0].eyeNor / eye_zs[0] +
+              bCoord.y * prim.v[1].eyeNor / eye_zs[1] +
+              bCoord.z * prim.v[2].eyeNor / eye_zs[2]
+              );
+            frag.eyePos = correct_z * (
+              bCoord.x * prim.v[0].eyePos / eye_zs[0] +
+              bCoord.y * prim.v[1].eyePos / eye_zs[1] +
+              bCoord.z * prim.v[2].eyePos / eye_zs[2]
+              );
+            frag.texcoord0 = correct_z * (
+              bCoord.x * prim.v[0].texcoord0 / eye_zs[0] +
+              bCoord.y * prim.v[1].texcoord0 / eye_zs[1] +
+              bCoord.z * prim.v[2].texcoord0 / eye_zs[2]
+              );
+#else
             frag.eyeNor =
               bCoord.x * prim.v[0].eyeNor +
               bCoord.y * prim.v[1].eyeNor +
@@ -740,6 +769,7 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
               bCoord.x * prim.v[0].texcoord0 +
               bCoord.y * prim.v[1].texcoord0 +
               bCoord.z * prim.v[2].texcoord0;
+#endif
             frag.dev_diffuseTex = prim.dev_diffuseTex;
             frag.texWidth = prim.texWidth;
             frag.texHeight = prim.texHeight;
