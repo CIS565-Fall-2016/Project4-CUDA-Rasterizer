@@ -70,7 +70,7 @@ float calculateBarycentricCoordinateValue(glm::vec2 a, glm::vec2 b, glm::vec2 c,
  * Calculate barycentric coordinates.
  */
 __host__ __device__ static
-glm::vec3 calculateBarycentricCoordinate(const glm::vec3 tri[3], glm::vec2 point) {
+glm::vec3 calculateBarycentricCoordinate(const glm::vec3 tri[3], const glm::vec2 point) {
     float beta  = calculateBarycentricCoordinateValue(glm::vec2(tri[0].x, tri[0].y), point, glm::vec2(tri[2].x, tri[2].y), tri);
     float gamma = calculateBarycentricCoordinateValue(glm::vec2(tri[0].x, tri[0].y), glm::vec2(tri[1].x, tri[1].y), point, tri);
     float alpha = 1.0 - beta - gamma;
