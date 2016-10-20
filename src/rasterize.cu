@@ -20,6 +20,7 @@
 
 #define PERSPECTIVE_CORRECT
 #define BILIN_INTERP
+#define CONSTANT_MEM
 
 namespace {
 
@@ -116,6 +117,14 @@ static glm::vec3 *dev_framebuffer = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
+#ifdef CONSTANT_MEM
+__constant__ float c_MVP[sizeof(glm::mat4) / sizeof(float)];
+__constant__ float c_MV[sizeof(glm::mat4) / sizeof(float)];
+__constant__ float c_MV_normal[sizeof(glm::mat3) / sizeof(float)];
+__constant__ int c_width[1];
+__constant__ int c_height[1];
+#endif
+
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
@@ -154,17 +163,29 @@ glm::vec3 getRGB(TextureData* tex, int width, int x, int y)
 * Writes fragment colors to the framebuffer
 */
 __global__
+#ifdef CONSTANT_MEM
+void render(Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+#else
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+#endif
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+#ifdef CONSTANT_MEM
+    int index = x + (y * c_width[0]);
+#else
     int index = x + (y * w);
+#endif
       
     const glm::vec3 lightVec = glm::normalize(glm::vec3(1, 3, 5));
     int twidth = fragmentBuffer[index].texWidth;
     int theight = fragmentBuffer[index].texHeight;
 
     glm::vec3 col;
+#ifdef CONSTANT_MEM
+    if (x < c_width[0] && y < c_height[0] && x > 0 && y > 0) {
+#else
     if (x < w && y < h && x > 0 && y > 0) {
+#endif
       // TODO: add your fragment shader code here
       if (fragmentBuffer[index].eyePos.z != 0) {
         if (fragmentBuffer[index].dev_diffuseTex != NULL) {
@@ -210,6 +231,12 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 void rasterizeInit(int w, int h) {
     width = w;
     height = h;
+
+#ifdef CONSTANT_MEM
+    cudaMemcpyToSymbol(c_width, &width, sizeof(int));
+    cudaMemcpyToSymbol(c_height, &height, sizeof(int));
+#endif
+
 	cudaFree(dev_fragmentBuffer);
 	cudaMalloc(&dev_fragmentBuffer, width * height * sizeof(Fragment));
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
@@ -677,7 +704,39 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 }
 
 
+#ifdef CONSTANT_MEM
+__global__ 
+void _vertexTransformAndAssembly(
+int numVertices, 
+PrimitiveDevBufPointers primitive) {
 
+  // vertex id
+  int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
+  if (vid < numVertices) {
+
+    // TODO: Apply vertex transformation here
+    // Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
+    // Then divide the pos by its w element to transform into NDC space
+    // Finally transform x and y to viewport space
+    glm::mat4& MVP = *(glm::mat4*)c_MVP;
+    glm::mat4& MV = *(glm::mat4*)c_MV;
+    glm::mat3& MV_normal = *(glm::mat3*)c_MV_normal;
+
+    glm::vec4 screenV = MVP * glm::vec4(primitive.dev_position[vid], 1.f);
+    glm::vec4 pixelV = screenV / screenV.w;
+    pixelV.x = (1.f - pixelV.x) / 2.f * c_width[0];
+    pixelV.y = (1.f - pixelV.y)/2.f * c_height[0];
+    primitive.dev_verticesOut[vid].pos = pixelV;
+
+    // TODO: Apply vertex assembly here
+    // Assemble all attribute arraies into the primitive array
+    primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.f));
+    primitive.dev_verticesOut[vid].eyeNor = MV_normal * primitive.dev_normal[vid];
+    primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
+  }
+}
+
+#else
 __global__ 
 void _vertexTransformAndAssembly(
 	int numVertices, 
@@ -706,6 +765,7 @@ void _vertexTransformAndAssembly(
     primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
 	}
 }
+#endif
 
 
 
@@ -820,6 +880,13 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	// Execute your rasterization pipeline here
 	// (See README for rasterization pipeline outline.)
 
+#ifdef CONSTANT_MEM
+  // copy constants
+    cudaMemcpyToSymbol(c_MVP, &MVP, sizeof(glm::mat4));
+    cudaMemcpyToSymbol(c_MV, &MV, sizeof(glm::mat4));
+    cudaMemcpyToSymbol(c_MV_normal, &MV_normal, sizeof(glm::mat3));
+#endif
+
 	// Vertex Process & primitive assembly
 	{
 		curPrimitiveBeginId = 0;
@@ -835,7 +902,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 				dim3 numBlocksForVertices((p->numVertices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 				dim3 numBlocksForIndices((p->numIndices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 
+#ifdef CONSTANT_MEM
+        _vertexTransformAndAssembly << < numBlocksForVertices, numThreadsPerBlock >> >(p->numVertices, *p);
+#else
 				_vertexTransformAndAssembly << < numBlocksForVertices, numThreadsPerBlock >> >(p->numVertices, *p, MVP, MV, MV_normal, width, height);
+#endif
 				checkCUDAError("Vertex Processing");
 				cudaDeviceSynchronize();
 				_primitiveAssembly << < numBlocksForIndices, numThreadsPerBlock >> >
@@ -864,7 +935,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   checkCUDAError("Rasterization");
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+#ifdef CONSTANT_MEM
+	render << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, dev_framebuffer);
+#else
+  render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+#endif
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
