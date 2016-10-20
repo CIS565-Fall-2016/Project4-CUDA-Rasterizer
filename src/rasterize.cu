@@ -145,31 +145,31 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int index = x + (y * w);
       
     const glm::vec3 lightVec = glm::normalize(glm::vec3(1, 3, 5));
+    int twidth = fragmentBuffer[index].texWidth;
+    int theight = fragmentBuffer[index].texHeight;
 
+    glm::vec3 col;
     if (x < w && y < h && x > 0 && y > 0) {
       // TODO: add your fragment shader code here
       if (fragmentBuffer[index].eyePos.z != 0) {
         if (fragmentBuffer[index].dev_diffuseTex != NULL) {
-          int width = fragmentBuffer[index].texWidth;
-          int height = fragmentBuffer[index].texHeight;
-          int tx = fragmentBuffer[index].texcoord0.x * width;
-          int ty = fragmentBuffer[index].texcoord0.y * height;
-          int idx = tx + ty * width;
+          
+          int tx = fragmentBuffer[index].texcoord0.x * twidth;
+          int ty = fragmentBuffer[index].texcoord0.y * theight;
+          int idx = 3*(tx + ty * twidth);
 
-          framebuffer[index] = glm::vec3(
-            (float)fragmentBuffer[index].dev_diffuseTex[idx] / 255.f,
-            (float)fragmentBuffer[index].dev_diffuseTex[idx + 1] / 255.f,
-            (float)fragmentBuffer[index].dev_diffuseTex[idx + 2] / 255.f
+          TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
+          col = glm::vec3(
+            (float)(tex[idx]) / 255.f,
+            (float)(tex[idx + 1]) / 255.f,
+            (float)(tex[idx + 2]) / 255.f
             );
-          //framebuffer[index] = glm::vec3((float)tx / width, (float)ty / width, 0);
         }
         else {
-          framebuffer[index] = glm::dot(lightVec, fragmentBuffer[index].eyeNor) * fragmentBuffer[index].eyeNor;
+          col = fragmentBuffer[index].eyeNor;
         }
       }
-      else {
-        framebuffer[index] = glm::vec3(0, 0, 0);
-      }
+      framebuffer[index] = glm::dot(lightVec, fragmentBuffer[index].eyeNor) * col;
 
     }
 }
@@ -557,13 +557,12 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 								const tinygltf::Texture &tex = scene.textures.at(diffuseTexName);
 								if (scene.images.find(tex.source) != scene.images.end()) {
 									const tinygltf::Image &image = scene.images.at(tex.source);
-
+                  
 									size_t s = image.image.size() * sizeof(TextureData);
 									cudaMalloc(&dev_diffuseTex, s);
 									cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 									
 									// TODO: store the image size to your PrimitiveDevBufPointers
-                  
                   texWidth = image.width;
                   texHeight = image.width;
 
@@ -728,21 +727,22 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
           int z = INT_MAX * -getZAtCoordinate(bCoord, triangle);
           atomicMin(&depths[pix_idx], z);
           if (depths[pix_idx] == z) {
-            fragments[pix_idx].eyeNor =
+            Fragment &frag = fragments[pix_idx];
+            frag.eyeNor =
               bCoord.x * prim.v[0].eyeNor +
               bCoord.y * prim.v[1].eyeNor +
               bCoord.z * prim.v[2].eyeNor;
-            fragments[pix_idx].eyePos =
+            frag.eyePos =
               bCoord.x * prim.v[0].eyePos +
               bCoord.y * prim.v[1].eyePos +
               bCoord.z * prim.v[2].eyePos;
-            fragments[pix_idx].texcoord0 =
+            frag.texcoord0 =
               bCoord.x * prim.v[0].texcoord0 +
               bCoord.y * prim.v[1].texcoord0 +
               bCoord.z * prim.v[2].texcoord0;
-            fragments[pix_idx].dev_diffuseTex = prim.dev_diffuseTex;
-            fragments[pix_idx].texWidth = prim.texWidth;
-            fragments[pix_idx].texHeight = prim.texHeight;
+            frag.dev_diffuseTex = prim.dev_diffuseTex;
+            frag.texWidth = prim.texWidth;
+            frag.texHeight = prim.texHeight;
           }
         }
       }
