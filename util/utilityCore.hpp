@@ -25,7 +25,7 @@
 #define G                           6.67384e-11
 #define EPSILON                     .000000001
 #define ZERO_ABSORPTION_EPSILON     0.00001
-#define PROFILING                   1
+#define PROFILING                   0
 #define PROFILING_PREFIX            "C:\\Users\\213re\\Code\\coursework\\565CIS\\Project4-CUDA-Rasterizer\\profiling\\"
 
 #ifndef PROFILE_KERNEL
