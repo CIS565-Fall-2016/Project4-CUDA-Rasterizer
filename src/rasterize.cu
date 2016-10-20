@@ -138,6 +138,18 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
     }
 }
 
+// get RGB value at index as 01 floats
+__host__ __device__ static
+glm::vec3 getRGB(TextureData* tex, int width, int x, int y)
+{
+  int idx = 3 * (x + y * width);
+  return glm::vec3(
+    (float)(tex[idx]) / 255.f,
+    (float)(tex[idx + 1]) / 255.f,
+    (float)(tex[idx + 2]) / 255.f
+  );
+}
+
 /** 
 * Writes fragment colors to the framebuffer
 */
@@ -156,17 +168,32 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
       // TODO: add your fragment shader code here
       if (fragmentBuffer[index].eyePos.z != 0) {
         if (fragmentBuffer[index].dev_diffuseTex != NULL) {
-          
-          int tx = fragmentBuffer[index].texcoord0.x * twidth;
-          int ty = fragmentBuffer[index].texcoord0.y * theight;
-          int idx = 3*(tx + ty * twidth);
 
           TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
-          col = glm::vec3(
-            (float)(tex[idx]) / 255.f,
-            (float)(tex[idx + 1]) / 255.f,
-            (float)(tex[idx + 2]) / 255.f
+#ifdef BILIN_INTERP
+          float tx = fragmentBuffer[index].texcoord0.x * twidth;
+          float ty = fragmentBuffer[index].texcoord0.y * theight;
+          int x_low = tx;
+          int x_high = tx + 1;
+          int y_low = ty;
+          int y_high = ty + 1;
+          int x_clamp = __min(x_high, twidth - 1);
+          int y_clamp = __min(y_high, theight - 1);
+
+          col =
+            (y_high - ty) * (
+            (x_high - tx) * getRGB(tex, twidth, x_low, y_low) +
+            (tx - x_low) * getRGB(tex, twidth, x_clamp, y_low)
+            ) +
+            (ty - y_low) * (
+            (x_high - tx) * getRGB(tex, twidth, x_low, y_clamp) +
+            (tx - x_low) * getRGB(tex, twidth, x_clamp, y_clamp)
             );
+#else
+          int tx = fragmentBuffer[index].texcoord0.x * twidth;
+          int ty = fragmentBuffer[index].texcoord0.y * theight;
+          col = getRGB(tex, twidth, tx, ty);
+#endif
         }
         else {
           col = fragmentBuffer[index].eyeNor;
