@@ -101,7 +101,7 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 }
 
 __host__ __device__ static
-float getCorrectZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3], const float zs[3]) {
+float getCorrectZAtCoordinate(const glm::vec3 barycentricCoord, const float zs[3]) {
   return 1.f / (barycentricCoord.x / zs[0]
     + barycentricCoord.y / zs[1]
     + barycentricCoord.z / zs[2]);

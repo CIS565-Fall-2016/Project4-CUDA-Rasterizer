@@ -21,6 +21,7 @@
 #define PERSPECTIVE_CORRECT
 #define BILIN_INTERP
 #define CONSTANT_MEM
+#define SEPARATE_INTERP
 
 namespace {
 
@@ -73,6 +74,8 @@ namespace {
 		VertexAttributeTexcoord texcoord0;
 		TextureData* dev_diffuseTex;
     int texWidth, texHeight;
+
+    Primitive* prim;
 		// ...
 	};
 
@@ -800,6 +803,95 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __global__
+void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Fragment* fragments, int width, int height) {
+    // primitive id
+    int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (pid < numPrimitives) {
+      Primitive &prim = primitives[pid];
+      glm::vec3 triangle[3] = { glm::vec3(prim.v[0].pos),
+                                glm::vec3(prim.v[1].pos),
+                                glm::vec3(prim.v[2].pos) };
+
+      AABB box = getAABBForTriangle(triangle);
+      box.min.x = __max(box.min.x, 0);
+      box.max.x = __min(box.max.x, width);
+      box.min.y = __max(box.min.y, 0);
+      box.max.y = __min(box.max.y, height);
+
+      for (int x = box.min.x; x < box.max.x; ++x) {
+        for (int y = box.min.y; y < box.max.y; ++y) {
+          int pix_idx = x + y * width;
+          glm::vec3 bCoord = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+          if (isBarycentricCoordInBounds(bCoord)) {
+            int intz = INT_MAX * -getZAtCoordinate(bCoord, triangle);
+            atomicMin(&depths[pix_idx], intz);
+            if (depths[pix_idx] == intz) {
+              fragments[pix_idx].prim = &prim;
+            }
+          }
+        }
+      }
+    }
+}
+
+__global__
+void _interpolateAttributes(Fragment* fragments, int width, int height) {
+
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+    int index = x + y * width;
+
+    if (x < width && y < height) {
+      Fragment& frag = fragments[index];
+      if (frag.prim == NULL) return;
+      Primitive& prim = *frag.prim;
+
+      glm::vec3 triangle[3] = { glm::vec3(prim.v[0].pos), glm::vec3(prim.v[1].pos), glm::vec3(prim.v[2].pos) };
+#ifdef PERSPECTIVE_CORRECT
+      float eye_zs[3] = { prim.v[0].eyePos.z, prim.v[1].eyePos.z, prim.v[2].eyePos.z };
+#endif
+      glm::vec3 bCoord = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+#ifdef PERSPECTIVE_CORRECT
+      float correct_z = getCorrectZAtCoordinate(bCoord, eye_zs);
+#endif
+
+#ifdef PERSPECTIVE_CORRECT
+      frag.eyeNor = correct_z * (
+        bCoord.x * prim.v[0].eyeNor / eye_zs[0] +
+        bCoord.y * prim.v[1].eyeNor / eye_zs[1] +
+        bCoord.z * prim.v[2].eyeNor / eye_zs[2]
+        );
+      frag.eyePos = correct_z * (
+        bCoord.x * prim.v[0].eyePos / eye_zs[0] +
+        bCoord.y * prim.v[1].eyePos / eye_zs[1] +
+        bCoord.z * prim.v[2].eyePos / eye_zs[2]
+        );
+      frag.texcoord0 = correct_z * (
+        bCoord.x * prim.v[0].texcoord0 / eye_zs[0] +
+        bCoord.y * prim.v[1].texcoord0 / eye_zs[1] +
+        bCoord.z * prim.v[2].texcoord0 / eye_zs[2]
+        );
+#else
+      frag.eyeNor =
+        bCoord.x * prim.v[0].eyeNor +
+        bCoord.y * prim.v[1].eyeNor +
+        bCoord.z * prim.v[2].eyeNor;
+      frag.eyePos =
+        bCoord.x * prim.v[0].eyePos +
+        bCoord.y * prim.v[1].eyePos +
+        bCoord.z * prim.v[2].eyePos;
+      frag.texcoord0 =
+        bCoord.x * prim.v[0].texcoord0 +
+        bCoord.y * prim.v[1].texcoord0 +
+        bCoord.z * prim.v[2].texcoord0;
+#endif
+      frag.dev_diffuseTex = prim.dev_diffuseTex;
+      frag.texWidth = prim.texWidth;
+      frag.texHeight = prim.texHeight;
+    }
+}
+
+__global__
 void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment* fragments, int width, int height) {
   // primitive id
   int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -813,6 +905,11 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
 #endif
 
     AABB box = getAABBForTriangle(triangle);
+    box.min.x = __max(box.min.x, 0);
+    box.max.x = __min(box.max.x, width);
+    box.min.y = __max(box.min.y, 0);
+    box.max.y = __min(box.max.y, height);
+
     for (int x = box.min.x; x < box.max.x; ++x) {
       for (int y = box.min.y; y < box.max.y; ++y) {
         int pix_idx = x + y * width;
@@ -821,7 +918,7 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
 
           float z = getZAtCoordinate(bCoord, triangle);
 #ifdef PERSPECTIVE_CORRECT
-          float correct_z = getCorrectZAtCoordinate(bCoord, triangle, eye_zs);
+          float correct_z = getCorrectZAtCoordinate(bCoord, eye_zs);
 #endif
           int intz = INT_MAX * -z;
           atomicMin(&depths[pix_idx], intz);
@@ -925,13 +1022,22 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
-	
+
 	// TODO: rasterize
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-  PROFILE_KERNEL( 
-    _rasterize, numBlocksForPrimitives, numThreadsPerBlock, 
-    totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
+#ifdef SEPARATE_INTERP
+  START_PROFILE(rasterize_prims)
+  _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
+  END_PROFILE(rasterize_prims)
+  START_PROFILE(interpolate)
+  _interpolateAttributes << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, width, height);
+  END_PROFILE(interpolate)
+#else
+  START_PROFILE(rasterize)
+    _rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
+  END_PROFILE(rasterize)
+#endif
   checkCUDAError("Rasterization");
 
     // Copy depthbuffer colors into framebuffer
