@@ -740,60 +740,17 @@ __device__ void shadeFragment(unsigned int i, unsigned int j, const Primitive &p
   glm::vec3 fragNrm = glm::normalize(bary.x*p.v[0].eyeNor + bary.y*p.v[1].eyeNor + bary.z*p.v[2].eyeNor);
   glm::vec3 lambert = glm::clamp(-glm::vec3(glm::dot(fragDir, fragNrm)), 0.0f, 1.0f);
 
-  glm::vec2 st = bary.x*p.v[0].texcoord0 + bary.y*p.v[1].texcoord0 + bary.z*p.v[2].texcoord0;
+  glm::vec3 texBary = bary / glm::vec3(p.v[0].pos[3], p.v[1].pos[3], p.v[2].pos[3]);
+
+  glm::vec2 st = texBary[0]*p.v[0].texcoord0 + texBary[1]*p.v[1].texcoord0 + texBary[2]*p.v[2].texcoord0;
+  float norm = texBary[0] + texBary[1] + texBary[2];
   if (p.v[0].dev_diffuseTex) {
-    float4 rgba = tex2D<float4>(p.v[0].dev_diffuseTexObj, st.x, st.y);
+    float4 rgba = tex2D<float4>(p.v[0].dev_diffuseTexObj, st.x / norm, st.y / norm);
     lambert *= glm::vec3(rgba.x,rgba.y,rgba.z);
   }
 
 
   out = lambert;
-}
-
-// make sure number of threads >= max(tilesize, numprimitives)
-__global__ void _fragDepthFindShared(int numPrimitives, Primitive *dev_primitives, int w, int h,
-                                      int iMin, int iMax, int jMin, int jMax,
-                                      glm::vec3 *framebuffer) {
-  extern __shared__ unsigned long long sFrag[];
-
-  // initialize shared memory
-  int pIdx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (pIdx < (iMax-iMin)*(jMax-jMin))
-    sFrag[pIdx] = 0xFFFFFFFFFFFFFFFFULL;
-
-  __syncthreads();
-
-  if (pIdx < numPrimitives) {
-    Primitive &p = dev_primitives[pIdx];
-
-    glm::vec3 tri[3];
-    tri[0] = glm::vec3(p.v[0].pos);
-    tri[1] = glm::vec3(p.v[1].pos);
-    tri[2] = glm::vec3(p.v[2].pos);
-
-    AABB aabb;
-    getAABBForTriangle(tri, aabb);
-    aabb.min = glm::max(aabb.min, glm::vec3(iMin,jMin,0.0f));
-    aabb.max = glm::min(aabb.max, glm::vec3(iMax,jMax,0.0f));
-    for (int j = aabb.min[1]; j < aabb.max[1]; j++) {
-    for (int i = aabb.min[0]; i < aabb.max[0]; i++) {
-      glm::vec2 coord(i,j);
-      glm::vec3 bary = calculateBarycentricCoordinate(tri, coord);
-      int idx = (i - iMin) + (iMax-iMin)*(j - jMin);
-      if (isBarycentricCoordInBounds(bary))
-        atomicMin(&sFrag[idx], FloatFlip(getZAtCoordinate(bary, tri),pIdx));
-    }}
-  }
-
-  __syncthreads();
-
-  if (pIdx < (iMax-iMin)*(jMax-jMin)) {
-    int i = iMin + pIdx % (iMax - iMin);
-    int j = jMin + pIdx / (iMax - iMin);
-    pIdx = sFrag[pIdx];
-    shadeFragment(i, j, dev_primitives[pIdx], framebuffer[i + w*j]);
-  }
-
 }
 
 __global__ void _fragRasterize(int numPrimitives, Primitive *dev_primitives, Fragment *dev_fragments, int w, int h, unsigned long long *depth, glm::vec3 *framebuffer) {
