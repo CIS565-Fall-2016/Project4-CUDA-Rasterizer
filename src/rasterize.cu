@@ -22,6 +22,7 @@
 #define BILIN_INTERP
 #define CONSTANT_MEM
 #define SEPARATE_INTERP
+#define OPTIM_BARY // https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
 
 namespace {
 
@@ -808,16 +809,62 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Frag
     int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (pid < numPrimitives) {
       Primitive &prim = primitives[pid];
+
+#ifdef OPTIM_BARY
+      glm::vec2 v0 = glm::vec2(prim.v[0].pos);
+      glm::vec2 v1 = glm::vec2(prim.v[1].pos);
+      glm::vec2 v2 = glm::vec2(prim.v[2].pos);
+      AABBScreen box = getAABBForTriangleScreen(v0, v1, v2);
+#else
       glm::vec3 triangle[3] = { glm::vec3(prim.v[0].pos),
                                 glm::vec3(prim.v[1].pos),
                                 glm::vec3(prim.v[2].pos) };
-
       AABB box = getAABBForTriangle(triangle);
+#endif
+
+      // clip bbox to screen
       box.min.x = __max(box.min.x, 0);
       box.max.x = __min(box.max.x, width);
       box.min.y = __max(box.min.y, 0);
       box.max.y = __min(box.max.y, height);
 
+#ifdef OPTIM_BARY
+      float A01 = v0.y - v1.y, B01 = v1.x - v0.x;
+      float A12 = v1.y - v2.y, B12 = v2.x - v1.x;
+      float A20 = v2.y - v0.y, B20 = v0.x - v2.x;
+
+      glm::vec2 p = box.min;
+
+      float w0_row = calculateSignedParallelogramArea(v1, p, v2);
+      float w1_row = calculateSignedParallelogramArea(v2, p, v0);
+      float w2_row = calculateSignedParallelogramArea(v0, p, v1);
+
+      for (p.y = box.min.y; p.y <= box.max.y; p.y++) {
+        float w0 = w0_row;
+        float w1 = w1_row;
+        float w2 = w2_row;
+
+        for (p.x = box.min.x; p.x <= box.max.x; p.x++) {
+          if (w0 >= 0 && w1 >=0 && w2 >= 0) {
+            int pix_idx = p.x + p.y * width;
+            int intz = INT_MAX * (w0 * prim.v[0].pos.z + w1 * prim.v[1].pos.z + w2 * prim.v[2].pos.z) / (w0 + w1 + w2);
+            atomicMin(&depths[pix_idx], intz);
+            if (depths[pix_idx] == intz) {
+              fragments[pix_idx].prim = &prim;
+            }
+          }
+
+          w0 += A12;
+          w1 += A20;
+          w2 += A01;
+        }
+
+        w0_row += B12;
+        w1_row += B20;
+        w2_row += B01;
+      }
+
+#else
       for (int x = box.min.x; x < box.max.x; ++x) {
         for (int y = box.min.y; y < box.max.y; ++y) {
           int pix_idx = x + y * width;
@@ -831,6 +878,7 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Frag
           }
         }
       }
+#endif
     }
 }
 
@@ -1030,9 +1078,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   START_PROFILE(rasterize_prims)
   _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
   END_PROFILE(rasterize_prims)
-  START_PROFILE(interpolate)
+  //START_PROFILE(interpolate)
   _interpolateAttributes << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, width, height);
-  END_PROFILE(interpolate)
+  //END_PROFILE(interpolate)
 #else
   START_PROFILE(rasterize)
     _rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
