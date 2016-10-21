@@ -661,9 +661,9 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
     int pid;	// id for cur primitives vector
     if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-    	pid = iid / (int)primitive.primitiveType;
-    	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-    		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+        pid = iid / (int)primitive.primitiveType;
+        dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+            = primitive.dev_verticesOut[primitive.dev_indices[iid]];
     }
 
 
@@ -687,22 +687,43 @@ glm::vec2 truncateFromVec4(glm::vec4 v) {
   return glm::vec2(v.x / v.w, v.y / v.w);
 }
 
+__device__
+int clamp_int(int mn, int x, int mx) {
+  if (x > mx) return mx;
+  if (x < mn) return mn;
+  return x;
+}
+
 __global__
 void kernRasterize(int numPrimitives, Primitive* dev_primitives,
-int width, int height, Fragment* dev_fragmentBuffer) {
+int width, int height, float invWidth, float invHeight, Fragment* fragmentBuffer) {
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index < numPrimitives) {
     Primitive & p = dev_primitives[index];
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        int outputIndex = x + y * width;
-        float xf = 2.0f * ((float)x / (float)width) - 1.0f;
-        float yf = 2.0f * ((float)(width - y) / (float)width) - 1.0f;
-        if (inTriangle2d(glm::vec2(xf, yf), 
-            truncateFromVec4(p.v[0].pos), 
-            truncateFromVec4(p.v[1].pos), 
-            truncateFromVec4(p.v[2].pos))) {
-          dev_fragmentBuffer[outputIndex].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
+    float minx = 1.0f;
+    float miny = 1.0f;
+    float maxx = -1.0f;
+    float maxy = -1.0f;
+    for (int i = 0; i < 3; i++) {
+      minx = glm::min(p.v[i].pos.x, minx);
+      miny = glm::min(p.v[i].pos.y, miny);
+      maxx = glm::max(p.v[i].pos.x, maxx);
+      maxy = glm::max(p.v[i].pos.y, maxy);
+    }
+    int minxpix = clamp_int(0, glm::floor(0.5f * (1.0f + minx) * width), width - 1);
+    int minypix = clamp_int(0, glm::floor(0.5f * (1.0f + miny) * height), height - 1);
+    int maxxpix = clamp_int(0, glm::ceil(0.5f * (1.0f + maxx) * width), width - 1);
+    int maxypix = clamp_int(0, glm::ceil(0.5f * (1.0f + maxy) * height), height - 1);
+    for (int y = minypix; y <= maxypix; y++) {
+      for (int x = minxpix; x <= maxxpix; x++) {
+        int fragIdx = (height - 1 - y) * width + x;
+        float xf = 2.0f * invWidth * x - 1.0f;
+        float yf = 2.0f * invHeight * y - 1.0f;
+        if (inTriangle2d(glm::vec2(xf, yf),
+              truncateFromVec4(p.v[0].pos),
+              truncateFromVec4(p.v[1].pos),
+              truncateFromVec4(p.v[2].pos))) {
+          fragmentBuffer[fragIdx].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
         }
       }
     }
@@ -760,12 +781,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   // TODO: rasterize
   int numPrimitives = totalNumPrimitives;
-  Primitive* primitives = (Primitive*)malloc(sizeof(Primitive) * numPrimitives);
-  cudaMemcpy(primitives, dev_primitives, sizeof(Primitive) * numPrimitives, cudaMemcpyDeviceToHost);
+  printf("Primitives: %d\n", numPrimitives);
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
   kernRasterize << < numBlocksForPrimitives, numThreadsPerBlock >> >(
-    numPrimitives, dev_primitives, width, height, dev_fragmentBuffer);
+    numPrimitives, dev_primitives, width, height, 1.0f / (float) width, 1.0f / (float) height, dev_fragmentBuffer);
 
 
   // Copy depthbuffer colors into framebuffer
