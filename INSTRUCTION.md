@@ -33,6 +33,7 @@ bunch of them around so you can pick a few to document your progress.
   * `gltfs/box/box.gltf` (8 vertices, 12 triangles, start with this)
   * `gltfs/cow/cow.gltf`
   * `gltfs/duck/duck.gltf` (has a diffuse texture)
+  * `gltfs/checkerboard/checkerboard.gltf` (has a diffuse texture, can be used for testing perspective correct interpolation)
   * `gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf` (has several textures)
   * `gltfs/flower/flower.gltf` (model with a lot of layers from most angles)
   * `gltfs/2_cylinder_engine/2_cylinder_engine.gltf` (relatively complex model, no texture, need to rescale to show in the center of screen)
@@ -85,11 +86,11 @@ See below for more guidance.
 You are also required to implement at least 2.0 "points" worth in extra features.
 (point values are given in parentheses):
 
-* (1.0) Use shared memory in a feature. A few ideas:
-   * shared memory textures
-   * shared memory for some kinds of instancing
-   * shared memory uniforms - an array of lights? an array of skinning matrices?
-   * tile-based post processing - SSAO? Bloom? Toon Shading?
+* (1.0) Use shared memory in a feature. Ideas and suggestions:
+   * Look for areas where you may need to access the same "chunk" of memory multiple times in a single thread
+   * post processing, with the fragment buffer divided into "tiles" - SSAO? Bloom? Toon Shading?
+   * shared memory uniforms - an array of skinning matrices? an array of lights?
+   * could you use shared memory for some kinds of texture-based shaders?
 * (2.0) [Tile-based pipeline](https://github.com/CIS565-Fall-2015/cis565-fall-2015.github.io/blob/master/lectures/10-Mobile-Graphics.pptx?raw=true)
 * Additional pipeline stages.
    * (1.0) Tessellation shader.
