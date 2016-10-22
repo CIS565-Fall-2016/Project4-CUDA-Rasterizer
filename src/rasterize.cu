@@ -656,10 +656,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
     for (; it != itEnd; it++) {
       cudaFree(it->second);
     }
-
     checkCUDAError("Free BufferView Device Mem");
   }
-
 
 }
 
@@ -890,9 +888,6 @@ void rasterizeFree() {
 #endif
 
       cudaFree(p->dev_verticesOut);
-
-
-      //TODO: release other attributes and materials
     }
   }
 
