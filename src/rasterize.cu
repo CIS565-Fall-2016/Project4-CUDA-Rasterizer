@@ -664,14 +664,14 @@ void _vertexTransformAndAssembly(
     // Then divide the pos by its w element to transform into NDC space
     // Finally transform x and y to viewport space
     vout.pos = MVP * glm::vec4(vpos, 1.0f);
-    vout.pos /= vout.pos.w;
+    if (fabs(vout.pos.w) > EPSILON) vout.pos /= vout.pos.w;
     vout.pos.x = 0.5f * (float)width * (vout.pos.x + 1.0f);
     vout.pos.y = 0.5f * (float)height * (vout.pos.y + 1.0f);
 
     // Assemble all attribute arraies into the primitive array
     VertexAttributeNormal & vnorm = primitive.dev_normal[vid];
     glm::vec4 eyePos = MV * glm::vec4(vpos, 1.0f);
-    vout.eyePos = glm::vec3(eyePos / eyePos.w);
+    if (fabs(eyePos.w) > EPSILON) vout.eyePos = glm::vec3(eyePos / eyePos.w);
     vout.eyeNor = glm::normalize(MV_normal * vnorm);
   }
 }
@@ -701,15 +701,6 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
 }
 
-__device__ __host__
-float ccw(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
-  return a.x * b.y + b.x * c.y + c.x * a.y - a.y * b.x - b.y * c.x - c.y * a.x;
-}
-
-__device__ __host__
-float inTriangle2d(glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c) {
-  return ccw(a, b, p) > 0 && ccw(b, c, p) > 0 && ccw(c, a, p) > 0;
-}
 __device__ __host__
 int clamp_int(int mn, int x, int mx) {
   if (x > mx) return mx;
@@ -749,7 +740,7 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
             if (isSet) {
               mutexes[fragIdx].mutex = 0;
             }
-          } while (!isSet);
+          } while (pos < mutexes[fragIdx].z && !isSet);
         }
       }
     }
@@ -804,6 +795,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
   initMutexes << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentMutexes);
+  checkCUDAError("init mutexes");
 
   // TODO: rasterize
   int numPrimitives = totalNumPrimitives;
@@ -812,6 +804,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   kernRasterize << < numBlocksForPrimitives, numThreadsPerBlock >> >(
     numPrimitives, dev_primitives, 
     width, height, dev_fragmentBuffer, dev_fragmentMutexes);
+  checkCUDAError("rasterizer");
 
   // Offline light transformation, since there aren't many lights
   for (Light & light : lights) {
