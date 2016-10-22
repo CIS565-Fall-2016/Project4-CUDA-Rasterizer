@@ -48,7 +48,7 @@ namespace {
     // glm::vec3 col;
     glm::vec2 texcoord0;
     TextureData* dev_diffuseTex = NULL;
-    // int texWidth, texHeight;
+    int texWidth, texHeight, texComp;
     // ...
   };
 
@@ -66,9 +66,6 @@ namespace {
 
     glm::vec3 eyePos;	// eye space position used for shading
     glm::vec3 eyeNor;
-    // VertexAttributeTexcoord texcoord0;
-    // TextureData* dev_diffuseTex;
-    // ...
   };
 
   struct FragmentMutex {
@@ -91,6 +88,9 @@ namespace {
 
     // Materials, add more attributes when needed
     TextureData* dev_diffuseTex;
+    int texWidth;
+    int texHeight;
+    int texComp;
     // TextureData* dev_specularTex;
     // TextureData* dev_normalTex;
     // ...
@@ -402,11 +402,11 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
           if (primitive.indices.empty())
             return;
 
-          // TODO: add new attributes for your PrimitiveDevBufPointers when you add new attributes
           VertexIndex* dev_indices;
           VertexAttributePosition* dev_position;
           VertexAttributeNormal* dev_normal;
           VertexAttributeTexcoord* dev_texcoord0;
+
 
           // ----------Indices-------------
 
@@ -549,6 +549,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
           // You can only worry about this part once you started to 
           // implement textures for your rasterizer
           TextureData* dev_diffuseTex = NULL;
+          int texWidth = 0;
+          int texHeight = 0;
+          int texComp = 0;
           if (!primitive.material.empty()) {
             const tinygltf::Material &mat = scene.materials.at(primitive.material);
             printf("material.name = %s\n", mat.name.c_str());
@@ -564,9 +567,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   cudaMalloc(&dev_diffuseTex, s);
                   cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 
-                  // TODO: store the image size to your PrimitiveDevBufPointers
-                  // image.width;
-                  // image.height;
+                  texWidth = image.width;
+                  texHeight = image.height;
+                  texComp = image.component;
 
                   checkCUDAError("Set Texture Image data");
                 }
@@ -607,6 +610,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
             dev_texcoord0,
 
             dev_diffuseTex,
+            texWidth,
+            texHeight,
+            texComp,
 
             dev_vertexOut	//VertexOut
           });
@@ -673,6 +679,15 @@ void _vertexTransformAndAssembly(
     glm::vec4 eyePos = MV * glm::vec4(vpos, 1.0f);
     if (fabs(eyePos.w) > EPSILON) vout.eyePos = glm::vec3(eyePos / eyePos.w);
     vout.eyeNor = glm::normalize(MV_normal * vnorm);
+
+    //Textures
+    if (primitive.dev_diffuseTex != NULL) {
+      vout.texcoord0 = primitive.dev_texcoord0[vid];
+    }
+    vout.dev_diffuseTex = primitive.dev_diffuseTex;
+    vout.texWidth = primitive.texWidth;
+    vout.texHeight = primitive.texHeight;
+    vout.texComp = primitive.texComp;
   }
 }
 
@@ -723,6 +738,7 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
     for (int y = minypix; y <= maxypix; y++) {
       for (int x = minxpix; x <= maxxpix; x++) {
         int fragIdx = (height - 1 - y) * width + (width - 1 - x);
+        Fragment & fragment = fragmentBuffer[fragIdx];
         glm::vec3 baryCoords = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
         if (isBarycentricCoordInBounds(baryCoords)) {
           float pos = glm::dot(baryCoords, glm::vec3(p.v[0].pos.z, p.v[1].pos.z, p.v[2].pos.z));
@@ -732,9 +748,23 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
             if (isSet) {
               if (pos < mutexes[fragIdx].z) {
                 mutexes[fragIdx].z = pos;
-                fragmentBuffer[fragIdx].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
-                fragmentBuffer[fragIdx].eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
-                fragmentBuffer[fragIdx].eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
+                if (p.v[0].dev_diffuseTex == NULL) {
+                  fragment.color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
+                }
+                else {
+                  TextureData * diffuseTex = p.v[0].dev_diffuseTex;
+                  glm::vec2 texcoord = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0) * baryCoords;
+                  int texx = texcoord.x * (p.v[0].texWidth - 1);
+                  int texy = texcoord.y * (p.v[0].texHeight - 1);
+                  int texComp = p.v[0].texComp;
+                  int texIdx = texy * p.v[0].texWidth + texx;
+                  fragment.color.r = diffuseTex[texComp * texIdx];
+                  fragment.color.g = diffuseTex[texComp * texIdx + 1];
+                  fragment.color.b = diffuseTex[texComp * texIdx + 2];
+                  fragment.color /= 255.0f;
+                }
+                fragment.eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
+                fragment.eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
               }
             }
             if (isSet) {
@@ -797,7 +827,6 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   initMutexes << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentMutexes);
   checkCUDAError("init mutexes");
 
-  // TODO: rasterize
   int numPrimitives = totalNumPrimitives;
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
@@ -805,6 +834,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     numPrimitives, dev_primitives, 
     width, height, dev_fragmentBuffer, dev_fragmentMutexes);
   checkCUDAError("rasterizer");
+
+  
 
   // Offline light transformation, since there aren't many lights
   for (Light & light : lights) {
