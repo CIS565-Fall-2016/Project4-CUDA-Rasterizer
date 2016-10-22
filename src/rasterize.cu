@@ -21,6 +21,8 @@
 #include <vector>
 
 #define TEXTURE_MAP 1
+#define PERSPECTIVE_CORRECT 1
+#define BILINEAR_INTERPOLATION 1
 
 namespace {
 
@@ -70,6 +72,12 @@ namespace {
 
     glm::vec3 eyePos;	// eye space position used for shading
     glm::vec3 eyeNor;
+
+    TextureData * diffuseTex;
+    int texWidth;
+    int texHeight;
+    int texComp;
+    glm::vec2 texcoord0;
   };
 
   struct FragmentMutex {
@@ -734,6 +742,15 @@ int clamp_int(int mn, int x, int mx) {
   return x;
 }
 
+__device__ __host__
+glm::vec3 getPixel(int x, int y, int width, int height, int components, TextureData * tex) {
+  /*if (x >= width || y >= height || x < 0 || y < 0) {
+    return glm::vec3(0, 0, 0);
+  }*/
+  int texIdx = y * width + x;
+  return (1.0f / 255.0f) * glm::vec3(tex[components * texIdx], tex[components * texIdx + 1], tex[components * texIdx + 2]);
+}
+
 __global__
 void kernRasterize(int numPrimitives, Primitive* dev_primitives,
 int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
@@ -761,22 +778,24 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
                 mutexes[fragIdx].z = pos;
 #if TEXTURE_MAP == 1
                 if (p.v[0].dev_diffuseTex == NULL) {
-#endif
-                  fragment.color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
-#if TEXTURE_MAP == 1
+                  fragment.color = glm::vec3(1.0f, 1.0f, 1.0f); // white
+                  fragment.diffuseTex = NULL;
                 }
                 else {
-                  TextureData * diffuseTex = p.v[0].dev_diffuseTex;
-                  glm::vec2 texcoord = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0) * baryCoords;
-                  int texx = texcoord.x * (p.v[0].texWidth - 1);
-                  int texy = texcoord.y * (p.v[0].texHeight - 1);
-                  int texComp = p.v[0].texComp;
-                  int texIdx = texy * p.v[0].texWidth + texx;
-                  fragment.color.r = diffuseTex[texComp * texIdx];
-                  fragment.color.g = diffuseTex[texComp * texIdx + 1];
-                  fragment.color.b = diffuseTex[texComp * texIdx + 2];
-                  fragment.color /= 255.0f;
+#if PERSPECTIVE_CORRECT == 1
+                  glm::vec3 perspectiveBaryCoords = glm::vec3(baryCoords.x / p.v[0].eyePos.z, baryCoords.y / p.v[1].eyePos.z, baryCoords.z / p.v[2].eyePos.z);
+                  fragment.texcoord0 = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0)
+                    * perspectiveBaryCoords * (1.0f / glm::dot(glm::vec3(1.0f, 1.0f, 1.0f), perspectiveBaryCoords));
+#else
+                  fragment.texcoord0 = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0) * baryCoords;
+#endif
+                  fragment.texWidth = p.v[0].texWidth;
+                  fragment.texHeight = p.v[0].texHeight;
+                  fragment.texComp = p.v[0].texComp;
+                  fragment.diffuseTex = p.v[0].dev_diffuseTex;
                 }
+#else
+                fragment.color = glm::vec3(1.0f, 1.0f, 1.0f); // white
 #endif
                 fragment.eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
                 fragment.eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
@@ -792,6 +811,33 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
   }
 }
 
+__global__
+void kernTextureShader(int width, int height, Fragment* fragmentBuffer) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  int index = x + (y * width);
+
+  if (x < width && y < height) {
+    Fragment & fragment = fragmentBuffer[index];
+    if (fragment.diffuseTex != NULL) {
+      float texx = 0.5f + fragment.texcoord0.x * (fragment.texWidth - 1);
+      float texy = 0.5f + fragment.texcoord0.y * (fragment.texHeight - 1);
+#if BILINEAR_INTERPOLATION == 1
+      float x1 = glm::floor(texx);
+      float y1 = glm::floor(texy);
+      glm::vec3 c11 = getPixel(x1, y1, fragment.texWidth, fragment.texHeight, fragment.texComp, fragment.diffuseTex);
+      glm::vec3 c12 = getPixel(x1, y1 + 1, fragment.texWidth, fragment.texHeight, fragment.texComp, fragment.diffuseTex);
+      glm::vec3 c21 = getPixel(x1 + 1, y1, fragment.texWidth, fragment.texHeight, fragment.texComp, fragment.diffuseTex);
+      glm::vec3 c22 = getPixel(x1 + 1, y1 + 1, fragment.texWidth, fragment.texHeight, fragment.texComp, fragment.diffuseTex);
+      glm::vec3 r1 = (texx - x1) * c21 + (1.0f + x1 - texx) * c11;
+      glm::vec3 r2 = (texx - x1) * c22 + (1.0f + x1 - texx) * c12;
+      fragment.color = (texy - y1) * r2 + (1.0f + y1 - texy) * r1;
+#else
+      fragment.color = getPixel(texx, texy, fragment.texWidth, fragment.texHeight, fragment.texComp, fragment.diffuseTex);
+#endif
+    }
+  }
+}
 
 
 /**
@@ -849,6 +895,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     numPrimitives, dev_primitives, 
     width, height, dev_fragmentBuffer, dev_fragmentMutexes);
   checkCUDAError("rasterizer");
+
+#if TEXTURE_MAP == 1
+  kernTextureShader << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
+  checkCUDAError("textureShader");
+#endif
 
   
 
