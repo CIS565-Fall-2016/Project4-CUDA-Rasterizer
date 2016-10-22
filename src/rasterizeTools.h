@@ -101,6 +101,19 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 }
 
 /**
+ * Perspective correct depth
+ * reference : https://www.comp.nus.edu.sg/~lowkl/publications/lowk_persp_interp_techrep.pdf
+ */
+__host__ __device__ static
+float getZAtCoordinatePerspectiveCorrect(const glm::vec3 barycentricCoord, const float z[3]) {
+	return 
+		1.0f / 
+		( barycentricCoord.x / z[0]
+		+ barycentricCoord.y / z[1]
+		+ barycentricCoord.z / z[2]);
+}
+
+/**
  *	Interpolate vec3 using barycentric coordinates
  */
 template <class T>

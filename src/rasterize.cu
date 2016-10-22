@@ -18,6 +18,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define BILINEAR_INTERP 1
+#define PERSPECTIVE_CORRECT 1
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -705,8 +708,11 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+
 /**
  * Rasterization kernel func.
+ * Perspective correct reference:
+ * https://www.comp.nus.edu.sg/~lowkl/publications/lowk_persp_interp_techrep.pdf
  */
 __global__ 
 void _rasterization(
@@ -724,6 +730,8 @@ void _rasterization(
 
 	//TODO: linear inerpolation for all attributes except pos
 
+	Primitive & primitive = dev_primitives[primitiveIdx];
+
 	// set up for barycentric coordinates interpolation
 	// get 3 vertex pos 
 	glm::vec3 tri_pos[3] = {
@@ -732,26 +740,18 @@ void _rasterization(
 		glm::vec3(dev_primitives[primitiveIdx].v[2].pos)
 	};
 
-	// get 3 vertex pos in eye space
-	glm::vec3 tri_eyePos[3] = {
-		dev_primitives[primitiveIdx].v[0].eyePos,
-		dev_primitives[primitiveIdx].v[1].eyePos,
-		dev_primitives[primitiveIdx].v[2].eyePos
+	
+
+#if PERSPECTIVE_CORRECT == 1
+	// get z value of eye space position
+	float z_eyePos[3] = {
+		dev_primitives[primitiveIdx].v[0].eyePos.z,
+		dev_primitives[primitiveIdx].v[1].eyePos.z,
+		dev_primitives[primitiveIdx].v[2].eyePos.z
 	};
 
-	// get 3 vertex pos in eye space
-	glm::vec3 tri_eyeNor[3] = {
-		dev_primitives[primitiveIdx].v[0].eyeNor,
-		dev_primitives[primitiveIdx].v[1].eyeNor,
-		dev_primitives[primitiveIdx].v[2].eyeNor
-	};
+#endif
 
-	// get 3 vertex texture coords 
-	glm::vec2 tri_texcoord0[3] = {
-		dev_primitives[primitiveIdx].v[0].texcoord0,
-		dev_primitives[primitiveIdx].v[1].texcoord0,
-		dev_primitives[primitiveIdx].v[2].texcoord0
-	};
 
 	// get AABB for this primitive
 	AABB aabb = getAABBForTriangle(tri_pos);
@@ -782,11 +782,45 @@ void _rasterization(
 				atomicMin(&dev_depth[pixelIdx], d);
 				if (dev_depth[pixelIdx] == d)
 				{
-					dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3); // black
-					dev_fragmentBuffer[pixelIdx].eyePos = interpolateUsingBarycentricCoord(baryCoord, tri_eyePos);
-					dev_fragmentBuffer[pixelIdx].eyeNor = interpolateUsingBarycentricCoord(baryCoord, tri_eyeNor);
-					dev_fragmentBuffer[pixelIdx].texcoord0 = interpolateUsingBarycentricCoord(baryCoord, tri_texcoord0);
 					
+#if PERSPECTIVE_CORRECT == 1
+
+					float correctZ = getZAtCoordinatePerspectiveCorrect(baryCoord, z_eyePos);
+					dev_fragmentBuffer[pixelIdx].eyePos = correctZ * (
+						baryCoord.x * primitive.v[0].eyePos / z_eyePos[0] +
+						baryCoord.y * primitive.v[1].eyePos / z_eyePos[1] +
+						baryCoord.z * primitive.v[2].eyePos / z_eyePos[2] );
+						
+					dev_fragmentBuffer[pixelIdx].eyeNor = correctZ * (
+						baryCoord.x * primitive.v[0].eyeNor / z_eyePos[0] +
+						baryCoord.y * primitive.v[1].eyeNor / z_eyePos[1] +
+						baryCoord.z * primitive.v[2].eyeNor / z_eyePos[2] );
+					
+					dev_fragmentBuffer[pixelIdx].texcoord0 = correctZ *(
+						baryCoord.x * primitive.v[0].texcoord0 / z_eyePos[0] +
+						baryCoord.y * primitive.v[1].texcoord0 / z_eyePos[1] +
+						baryCoord.z * primitive.v[2].texcoord0 / z_eyePos[2] );
+
+#else 
+
+					dev_fragmentBuffer[pixelIdx].eyePos = 
+						baryCoord.x * primitive.v[0].eyePos +
+						baryCoord.y * primitive.v[1].eyePos +
+						baryCoord.z * primitive.v[2].eyePos ;
+
+					dev_fragmentBuffer[pixelIdx].eyeNor = 
+						baryCoord.x * primitive.v[0].eyeNor +
+						baryCoord.y * primitive.v[1].eyeNor +
+						baryCoord.z * primitive.v[2].eyeNor ;
+
+					dev_fragmentBuffer[pixelIdx].texcoord0 = 
+						baryCoord.x * primitive.v[0].texcoord0 +
+						baryCoord.y * primitive.v[1].texcoord0 +
+						baryCoord.z * primitive.v[2].texcoord0 ;
+
+#endif
+
+					dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3); // black
 					dev_fragmentBuffer[pixelIdx].dev_diffuseTex = dev_primitives[primitiveIdx].dev_diffuseTex;
 					dev_fragmentBuffer[pixelIdx].diffuseTexWidth = dev_primitives[primitiveIdx].diffuseTexWidth;
 					dev_fragmentBuffer[pixelIdx].diffuseTexHeight = dev_primitives[primitiveIdx].diffuseTexHeight;
@@ -800,8 +834,35 @@ void _rasterization(
 
 }
 
+/*
+* helper function for get pixel color from texture file
+*/
+__device__
+glm::vec3 getTextureColor(
+	TextureData* texture,
+	int texWidth, int texHeight,
+	int texStride,
+	int x, int y)
+{
+	int texPixelIdx = texStride * (x + y * texWidth);
+
+	if (x >= 0 && y >= 0 && x < texWidth && y < texHeight && texture != NULL)
+	{
+		return glm::vec3(
+			(float)texture[texPixelIdx + 0] / 255.0f,
+			(float)texture[texPixelIdx + 1] / 255.0f,
+			(float)texture[texPixelIdx + 2] / 255.0f);
+	}
+	else
+	{
+		return glm::vec3(0.3, 0.3, 0.3);
+	}
+}
+
 /**
 * Writes fragment colors to the framebuffer
+* bilinear filter: reference
+* https://en.wikipedia.org/wiki/Bilinear_filtering
 */
 __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
@@ -814,6 +875,41 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		//framebuffer[index] = fragmentBuffer[index].eyeNor;
 
 		// TODO: add your fragment shader code here
+
+#if BILINEAR_INTERP == 1
+		Fragment & frag = fragmentBuffer[index];
+
+		float fx = frag.texcoord0.x * frag.diffuseTexWidth;
+		float fy = frag.texcoord0.y * frag.diffuseTexHeight;
+		int tx = glm::max(0, glm::min(int(fx), frag.diffuseTexWidth - 1));
+		int ty = glm::max(0, glm::min(int(fy), frag.diffuseTexHeight - 1));
+
+		float dx = fx - tx;
+		float dy = fy - ty;
+
+		glm::vec3 tex_x_y = getTextureColor(
+			frag.dev_diffuseTex,
+			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+			tx, ty);
+		glm::vec3 tex_x_1_y = getTextureColor(
+			frag.dev_diffuseTex,
+			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+			tx + 1, ty);
+		glm::vec3 tex_x_y_1 = getTextureColor(
+			frag.dev_diffuseTex,
+			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+			tx, ty + 1);
+		glm::vec3 tex_x_1_y_1 = getTextureColor(
+			frag.dev_diffuseTex,
+			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+			tx  + 1, ty + 1);
+
+		framebuffer[index] = 
+			(tex_x_y * (1 - dx) + tex_x_1_y * dx ) * (1 - dy) + 
+			(tex_x_y_1 * (1 - dx) + tex_x_1_y_1 * dx ) * dy;
+
+#else
+
 		Fragment & frag = fragmentBuffer[index];
 
 		int tx = frag.texcoord0.x * frag.diffuseTexWidth; 
@@ -830,8 +926,11 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		}
 		else
 		{
-			framebuffer[index] = frag.color;
+			framebuffer[index] = glm::vec3(0.3, 0.3, 0.3);
 		}
+
+#endif
+
 	}
 }
 
