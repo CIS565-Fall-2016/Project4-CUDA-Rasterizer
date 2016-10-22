@@ -93,7 +93,7 @@ namespace {
 		// Materials, add more attributes when needed
 		TextureData* dev_diffuseTex;
 		int diffuseTexWidth, diffuseTexHeight;
-		int diffuseTexStride; // RGB RGBA
+		int diffuseTexStride; 
 
 		// TextureData* dev_specularTex;
 		// TextureData* dev_normalTex;
@@ -518,6 +518,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					// implement textures for your rasterizer
 					TextureData* dev_diffuseTex = NULL;
 					int texWidth, texHeight, texStride;
+
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());

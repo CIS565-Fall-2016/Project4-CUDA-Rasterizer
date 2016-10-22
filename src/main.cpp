@@ -98,6 +98,8 @@ void mainLoop() {
 float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
 float x_angle = 0.0f, y_angle = 0.0f;
+float fov = 65.0f;
+
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
@@ -106,6 +108,11 @@ void runCuda() {
 	glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
 		scale * ((float)width / (float)height),
 		-scale, scale, 1.0, 1000.0);
+
+	/*glm::mat4 P = glm::perspectiveFov(
+		fov, 
+		(float)width, (float)height,
+		0.1f, 1000.0f);*/
 
 	glm::mat4 V = glm::mat4(1.0f);
 
