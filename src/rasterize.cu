@@ -119,7 +119,7 @@ static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2Primitiv
 static int width = 0;
 static int height = 0;
 
-#define AMBIENT_LIGHT 0.3f
+#define AMBIENT_LIGHT 0.2f
 std::vector<Light> lights = {Light(glm::vec4(0.0f, 10.0f, 10.0f, 1.0f), 1.0f)};
 
 static int totalNumPrimitives = 0;
@@ -164,7 +164,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int 
     Fragment & fragment = fragmentBuffer[index];
     framebuffer[index] = AMBIENT_LIGHT * fragment.color;
 
-    // Phong shading
+    // Lambert shading
     for (int i = 0; i < numLights; i++) {
       Light & light = lights[i];
       float lightStrength = glm::max(0.0f, glm::dot(fragment.eyeNor, glm::normalize(light.eyePos - fragment.eyePos)));
@@ -687,10 +687,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
   int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
 
   if (iid < numIndices) {
-
-    // TODO: uncomment the following code for a start
     // This is primitive assembly for triangles
-
     int pid;	// id for cur primitives vector
     if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
         pid = iid / (int)primitive.primitiveType;
