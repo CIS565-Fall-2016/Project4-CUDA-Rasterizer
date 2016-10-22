@@ -17,6 +17,7 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 
 namespace {
 
@@ -641,6 +642,9 @@ void _vertexTransformAndAssembly(
     VertexAttributePosition & vpos = primitive.dev_position[vid];
     // VertexAttributeNormal & vnorm = primitive.dev_normal[vid];
     vout.pos = MVP * glm::vec4(vpos, 1.0f);
+    vout.pos /= vout.pos.w;
+    vout.pos.x = 0.5f * (float)width * (vout.pos.x + 1.0f);
+    vout.pos.y = 0.5f * (float)height * (vout.pos.y + 1.0f);
   }
 }
 
@@ -672,22 +676,16 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
 }
 
-__device__
+__device__ __host__
 float ccw(glm::vec2 a, glm::vec2 b, glm::vec2 c) {
   return a.x * b.y + b.x * c.y + c.x * a.y - a.y * b.x - b.y * c.x - c.y * a.x;
 }
 
-__device__
+__device__ __host__
 float inTriangle2d(glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c) {
   return ccw(a, b, p) > 0 && ccw(b, c, p) > 0 && ccw(c, a, p) > 0;
 }
-
-__device__
-glm::vec2 truncateFromVec4(glm::vec4 v) {
-  return glm::vec2(v.x / v.w, v.y / v.w);
-}
-
-__device__
+__device__ __host__
 int clamp_int(int mn, int x, int mx) {
   if (x > mx) return mx;
   if (x < mn) return mn;
@@ -700,29 +698,19 @@ int width, int height, float invWidth, float invHeight, Fragment* fragmentBuffer
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index < numPrimitives) {
     Primitive & p = dev_primitives[index];
-    float minx = 1.0f;
-    float miny = 1.0f;
-    float maxx = -1.0f;
-    float maxy = -1.0f;
-    for (int i = 0; i < 3; i++) {
-      minx = glm::min(p.v[i].pos.x, minx);
-      miny = glm::min(p.v[i].pos.y, miny);
-      maxx = glm::max(p.v[i].pos.x, maxx);
-      maxy = glm::max(p.v[i].pos.y, maxy);
-    }
-    int minxpix = clamp_int(0, glm::floor(0.5f * (1.0f + minx) * width), width - 1);
-    int minypix = clamp_int(0, glm::floor(0.5f * (1.0f + miny) * height), height - 1);
-    int maxxpix = clamp_int(0, glm::ceil(0.5f * (1.0f + maxx) * width), width - 1);
-    int maxypix = clamp_int(0, glm::ceil(0.5f * (1.0f + maxy) * height), height - 1);
+    glm::vec3 triangle[3] = { glm::vec3(p.v[0].pos), glm::vec3(p.v[1].pos), glm::vec3(p.v[2].pos) };
+    AABB boundingBox = getAABBForTriangle(triangle);
+    int minxpix = clamp_int(0, boundingBox.min.x, width - 1);
+    int minypix = clamp_int(0, boundingBox.min.y, height - 1);
+    int maxxpix = clamp_int(0, boundingBox.max.x, width - 1);
+    int maxypix = clamp_int(0, boundingBox.max.y, height - 1);
     for (int y = minypix; y <= maxypix; y++) {
       for (int x = minxpix; x <= maxxpix; x++) {
-        int fragIdx = (height - 1 - y) * width + x;
-        float xf = 2.0f * invWidth * x - 1.0f;
-        float yf = 2.0f * invHeight * y - 1.0f;
-        if (inTriangle2d(glm::vec2(xf, yf),
-              truncateFromVec4(p.v[0].pos),
-              truncateFromVec4(p.v[1].pos),
-              truncateFromVec4(p.v[2].pos))) {
+        int fragIdx = (height - 1 - y) * width + (width - 1 - x);
+        if (inTriangle2d(glm::vec2(x, y),
+              glm::vec2(p.v[0].pos),
+              glm::vec2(p.v[1].pos),
+              glm::vec2(p.v[2].pos))) {
           fragmentBuffer[fragIdx].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
         }
       }
@@ -781,12 +769,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   // TODO: rasterize
   int numPrimitives = totalNumPrimitives;
-  printf("Primitives: %d\n", numPrimitives);
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
   kernRasterize << < numBlocksForPrimitives, numThreadsPerBlock >> >(
     numPrimitives, dev_primitives, width, height, 1.0f / (float) width, 1.0f / (float) height, dev_fragmentBuffer);
-
 
   // Copy depthbuffer colors into framebuffer
   render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
