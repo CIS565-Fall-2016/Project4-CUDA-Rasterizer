@@ -20,6 +20,8 @@
 #include <iostream>
 #include <vector>
 
+#define TEXTURE_MAP 1
+
 namespace {
 
   typedef unsigned short VertexIndex;
@@ -46,9 +48,11 @@ namespace {
     glm::vec3 eyePos;	// eye space position used for shading
     glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
     // glm::vec3 col;
+#if TEXTURE_MAP == 1
     glm::vec2 texcoord0;
     TextureData* dev_diffuseTex = NULL;
     int texWidth, texHeight, texComp;
+#endif
     // ...
   };
 
@@ -87,10 +91,12 @@ namespace {
     VertexAttributeTexcoord* dev_texcoord0;
 
     // Materials, add more attributes when needed
+#if TEXTURE_MAP == 1
     TextureData* dev_diffuseTex;
     int texWidth;
     int texHeight;
     int texComp;
+#endif
     // TextureData* dev_specularTex;
     // TextureData* dev_normalTex;
     // ...
@@ -549,9 +555,11 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
           // You can only worry about this part once you started to 
           // implement textures for your rasterizer
           TextureData* dev_diffuseTex = NULL;
+#if TEXTURE_MAP == 1
           int texWidth = 0;
           int texHeight = 0;
           int texComp = 0;
+#endif
           if (!primitive.material.empty()) {
             const tinygltf::Material &mat = scene.materials.at(primitive.material);
             printf("material.name = %s\n", mat.name.c_str());
@@ -567,9 +575,11 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   cudaMalloc(&dev_diffuseTex, s);
                   cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 
+#if TEXTURE_MAP == 1
                   texWidth = image.width;
                   texHeight = image.height;
                   texComp = image.component;
+#endif
 
                   checkCUDAError("Set Texture Image data");
                 }
@@ -608,11 +618,12 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
             dev_position,
             dev_normal,
             dev_texcoord0,
-
+#if TEXTURE_MAP == 1
             dev_diffuseTex,
             texWidth,
             texHeight,
             texComp,
+#endif
 
             dev_vertexOut	//VertexOut
           });
@@ -680,6 +691,7 @@ void _vertexTransformAndAssembly(
     if (fabs(eyePos.w) > EPSILON) vout.eyePos = glm::vec3(eyePos / eyePos.w);
     vout.eyeNor = glm::normalize(MV_normal * vnorm);
 
+#if TEXTURE_MAP == 1
     //Textures
     if (primitive.dev_diffuseTex != NULL) {
       vout.texcoord0 = primitive.dev_texcoord0[vid];
@@ -688,6 +700,7 @@ void _vertexTransformAndAssembly(
     vout.texWidth = primitive.texWidth;
     vout.texHeight = primitive.texHeight;
     vout.texComp = primitive.texComp;
+#endif
   }
 }
 
@@ -748,8 +761,11 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
             if (isSet) {
               if (pos < mutexes[fragIdx].z) {
                 mutexes[fragIdx].z = pos;
+#if TEXTURE_MAP == 1
                 if (p.v[0].dev_diffuseTex == NULL) {
+#endif
                   fragment.color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
+#if TEXTURE_MAP == 1
                 }
                 else {
                   TextureData * diffuseTex = p.v[0].dev_diffuseTex;
@@ -763,6 +779,7 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
                   fragment.color.b = diffuseTex[texComp * texIdx + 2];
                   fragment.color /= 255.0f;
                 }
+#endif
                 fragment.eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
                 fragment.eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
               }
@@ -868,7 +885,9 @@ void rasterizeFree() {
       cudaFree(p->dev_position);
       cudaFree(p->dev_normal);
       cudaFree(p->dev_texcoord0);
+#if TEXTURE_MAP == 1
       cudaFree(p->dev_diffuseTex);
+#endif
 
       cudaFree(p->dev_verticesOut);
 
