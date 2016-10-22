@@ -632,14 +632,13 @@ void _vertexTransformAndAssembly(
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid < numVertices) {
-		auto pos = glm::vec4((glm::vec3) primitive.dev_position[vid],1) * MVP;
-		pos.x /= pos.w;
-		pos.y /= pos.w;
-		pos.x = 0.5f * (float)width * (pos.x / pos.w + 1.0f);
-		pos.y = 0.5f * (float)height * (pos.y / pos.w + 1.0f);
+		auto pos = MVP * glm::vec4((glm::vec3) primitive.dev_position[vid], 1);
+		pos /= pos.w;
+
+		pos.x = 0.5f * (float)width * (pos.x + 1.0f);
+		pos.y = 0.5f * (float)height * (pos.y + 1.0f);
 
 		primitive.dev_verticesOut[vid].pos = pos;
-		
 	}
 }
 
@@ -681,17 +680,28 @@ __global__ void _rasterize(
 	if (pid > totalNumPrimitives) {
 		return;
 	}
-	const glm::vec3 v[3] = {
+	const glm::vec3 tri[3] = {
 		glm::vec3(dev_primitives[pid].v[0].pos),
 		glm::vec3(dev_primitives[pid].v[1].pos),
 		glm::vec3(dev_primitives[pid].v[2].pos)
 	};
-	int maxx = clamp_int(0, aabb.max.x),
-		maxy = clamp_int(0, aabb.max.y);
-	AABB aabb = getAABBForTriangle(v);
-	for (int i = clamp_int(0, aabb.min.x); i < aabb.max.x; i++) {
-		for (int j = clamp_int(0, aabb.max.x); j < aabb.max.y; j++) {
-			if ()
+	AABB aabb = getAABBForTriangle(tri);
+
+	int maxx = glm::clamp(0, width - 1, (int) aabb.max.x),
+		maxy = glm::clamp(0, height - 1, (int) aabb.max.y);
+	int fid;
+	for (int i = glm::clamp(0, width - 1, (int)aabb.min.x); i < maxx; i++) {
+		for (int j = glm::clamp(0, height - 1, (int)aabb.min.y); j < maxy; j++) {
+			fid = (height - j - 1) * width + (width - i - 1);
+			glm::vec3 barycentric = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+			if (isBarycentricCoordInBounds(barycentric)) {
+				//float z = glm::dot(barycentric, glm::vec3(
+				//	dev_primitives[pid].v[0].pos.z, 
+				//	dev_primitives[pid].v[1].pos.z, 
+				//	dev_primitives[pid].v[2].pos.z)
+				//);
+				dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
+			}
 		}
 	}
 
