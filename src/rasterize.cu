@@ -660,7 +660,8 @@ void _vertexTransformAndAssembly(
 static int curPrimitiveBeginId = 0;
 
 __global__
-void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, PrimitiveDevBufPointers primitive) {
+void _primitiveAssembly(int numIndices, int curPrimitiveBeginId,
+			Primitive* dev_primitives, PrimitiveDevBufPointers primitive) {
 
 	// index id
 	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -670,12 +671,12 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+					= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
@@ -688,7 +689,8 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 /**
  * Perform rasterization.
  */
-void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
+		const glm::mat3 MV_normal) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
