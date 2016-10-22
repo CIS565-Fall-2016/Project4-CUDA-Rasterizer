@@ -17,6 +17,7 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include "util/utilityCore.hpp"
 
 namespace {
 
@@ -62,8 +63,8 @@ namespace {
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
 
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
+		 glm::vec3 eyePos;	// eye space position used for shading
+		 glm::vec3 eyeNor;
 		// VertexAttributeTexcoord texcoord0;
 		// TextureData* dev_diffuseTex;
 		// ...
@@ -141,8 +142,11 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int index = x + (y * w);
 
     if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
-
+        //framebuffer[index] = fragmentBuffer[index].color;
+		glm::vec3 light = glm::normalize(-1.0f * glm::vec3(-1, -1, -1));
+		glm::vec3 ambient = glm::vec3(0.1, 0.1, 0.1);
+		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
+		framebuffer[index] = diffuse;
 		// TODO: add your fragment shader code here
 
     }
@@ -628,7 +632,8 @@ void _vertexTransformAndAssembly(
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid < numVertices) {
-
+		glm::vec4 clipSpace = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
+		clipSpace /= clipSpace.w;
 		// TODO: Apply vertex transformation here
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
 		// Then divide the pos by its w element to transform into NDC space
@@ -636,6 +641,13 @@ void _vertexTransformAndAssembly(
 
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
+		clipSpace.x = (width / 2) * -1 * clipSpace.x + (width / 2);
+		clipSpace.y = (height / 2) * -1 * clipSpace.y + (height / 2);
+		
+		// Assemble all attribute arrays into the primitive array
+		primitive.dev_verticesOut[vid].pos = clipSpace;
+		primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.0f));
+		primitive.dev_verticesOut[vid].eyeNor = MV_normal * primitive.dev_normal[vid];
 		
 	}
 }
@@ -655,12 +667,12 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
@@ -668,7 +680,60 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+__device__
+float _calcDetermimate(glm::vec3 p0, glm::vec3 p1, glm::vec2 p2) {
+	return (p1.x - p0.x)*(p2.y - p0.y) - (p1.y - p0.y)*(p2.x - p0.x);
+}
 
+__global__
+void _rasterizePrims(
+	int width, int height,
+	int numPrimitives,
+	Primitive* dev_primitives,
+	Fragment *dev_fragmentBuffer, int* dev_depth) {
+		// primitive id  
+		int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	
+		if (pid < numPrimitives) {
+		Primitive primitive = dev_primitives[pid];
+		glm::vec3 p0 = glm::vec3(primitive.v[0].pos);
+		glm::vec3 p1 = glm::vec3(primitive.v[1].pos);
+		glm::vec3 p2 = glm::vec3(primitive.v[2].pos);
+		int minX = glm::max(glm::floor(glm::min(p0.x, glm::min(p1.x, p2.x))), 0.0f);
+		int maxX = glm::min(glm::ceil(glm::max(p0.x, glm::max(p1.x, p2.x))), width - 1.0f);
+		int minY = glm::max(glm::floor(glm::min(p0.y, glm::min(p1.y, p2.y))), 0.0f);
+		int maxY = glm::min(glm::ceil(glm::max(p0.y, glm::max(p1.y, p2.y))), height - 1.0f);
+		
+		glm::vec3 tri[3] = { p0, p1, p2 };
+		glm::vec3 eyePosTri[3] = { primitive.v[0].eyePos, primitive.v[1].eyePos, primitive.v[2].eyePos };
+		glm::vec3 eyeNorTri[3] = { primitive.v[0].eyeNor, primitive.v[1].eyeNor, primitive.v[2].eyeNor };
+		
+		glm::vec3 color;
+		//color[pid % 3] = 1;
+		color[1] = 1;
+		//color = primitive.v[0].eyeNor;
+
+		glm::vec2 pix;
+		for (pix.x = minX; pix.x < maxX; pix.x++) {
+			for (pix.y = minY; pix.y < maxY; pix.y++) {
+				int index = (int)(pix.x + pix.y * width);
+				
+				glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, pix);
+				if (isBarycentricCoordInBounds(barycentricCoord)) {
+					int depth = getZAtCoordinate(barycentricCoord, tri) * INT_MAX;
+					atomicMin(&dev_depth[index], depth);
+					if (depth == dev_depth[index]) {
+						dev_fragmentBuffer[index].color = color;
+						//interpolate eyepos and eyenor
+						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * eyePosTri[0] + barycentricCoord.y * eyePosTri[1] + barycentricCoord.z * eyePosTri[2];
+						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * eyeNorTri[0] + barycentricCoord.y * eyeNorTri[1] + barycentricCoord.z * eyeNorTri[2];
+						
+					}
+				}
+			}
+		}
+	}
+}
 
 /**
  * Perform rasterization.
