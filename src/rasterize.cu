@@ -629,18 +629,16 @@ void _vertexTransformAndAssembly(
 	PrimitiveDevBufPointers primitive, 
 	glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal, 
 	int width, int height) {
-
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid < numVertices) {
+		auto pos = glm::vec4((glm::vec3) primitive.dev_position[vid],1) * MVP;
+		pos.x /= pos.w;
+		pos.y /= pos.w;
+		pos.x = 0.5f * (float)width * (pos.x / pos.w + 1.0f);
+		pos.y = 0.5f * (float)height * (pos.y / pos.w + 1.0f);
 
-		// TODO: Apply vertex transformation here
-		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
-		// Then divide the pos by its w element to transform into NDC space
-		// Finally transform x and y to viewport space
-
-		// TODO: Apply vertex assembly here
-		// Assemble all attribute arraies into the primitive array
+		primitive.dev_verticesOut[vid].pos = pos;
 		
 	}
 }
@@ -660,12 +658,12 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
@@ -674,6 +672,31 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 
+__global__ void _rasterize(
+	int totalNumPrimitives, 
+	int width, int height, 
+	Primitive* dev_primitives,
+	Fragment* dev_fragmentBuffer) {
+	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pid > totalNumPrimitives) {
+		return;
+	}
+	const glm::vec3 v[3] = {
+		glm::vec3(dev_primitives[pid].v[0].pos),
+		glm::vec3(dev_primitives[pid].v[1].pos),
+		glm::vec3(dev_primitives[pid].v[2].pos)
+	};
+	int maxx = clamp_int(0, aabb.max.x),
+		maxy = clamp_int(0, aabb.max.y);
+	AABB aabb = getAABBForTriangle(v);
+	for (int i = clamp_int(0, aabb.min.x); i < aabb.max.x; i++) {
+		for (int j = clamp_int(0, aabb.max.x); j < aabb.max.y; j++) {
+			if ()
+		}
+	}
+
+
+}
 
 /**
  * Perform rasterization.
@@ -723,8 +746,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// TODO: rasterize
-
-
+	dim3 numThreadsPerBlock(128);
+	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	_rasterize << <numBlocksForPrimitives, blockSize2d >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer);
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
