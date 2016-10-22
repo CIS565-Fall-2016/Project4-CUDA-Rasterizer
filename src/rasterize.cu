@@ -165,11 +165,11 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int 
     Fragment & fragment = fragmentBuffer[index];
     framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
 
-    // TODO: add your fragment shader code here
+    // Phong shading
     for (int i = 0; i < numLights; i++) {
       Light & light = lights[i];
       framebuffer[index] += 
-        lights[i].emittance * fragment.color * glm::dot(fragment.eyeNor, light.eyePos - fragment.eyePos);
+        lights[i].emittance * fragment.color * glm::dot(fragment.eyeNor, glm::normalize(light.eyePos - fragment.eyePos));
     }
   }
 }
