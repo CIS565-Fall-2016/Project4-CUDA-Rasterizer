@@ -18,6 +18,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -63,11 +64,16 @@ namespace {
     // The attributes listed below might be useful, 
     // but always feel free to modify on your own
 
-    // glm::vec3 eyePos;	// eye space position used for shading
-    // glm::vec3 eyeNor;
+    glm::vec3 eyePos;	// eye space position used for shading
+    glm::vec3 eyeNor;
     // VertexAttributeTexcoord texcoord0;
     // TextureData* dev_diffuseTex;
     // ...
+  };
+
+  struct FragmentMutex {
+    float z;
+    int mutex;
   };
 
   struct PrimitiveDevBufPointers {
@@ -97,16 +103,30 @@ namespace {
 
 }
 
+struct Light {
+  glm::vec4 worldPos;
+  glm::vec3 eyePos;
+  float emittance;
+  Light(glm::vec4 worldPos, float emittance) {
+    this->worldPos = worldPos;
+    this->emittance = emittance;
+  }
+};
+
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
 
 static int width = 0;
 static int height = 0;
 
+std::vector<Light> lights = {Light(glm::vec4(0.0f, 10.0f, 10.0f, 1.0f), 1.0f)};
+
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
+static Light *dev_lights = NULL;
+static FragmentMutex *dev_fragmentMutexes = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
@@ -136,16 +156,21 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 * Writes fragment colors to the framebuffer
 */
 __global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int numLights, Light *lights) {
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
   int index = x + (y * w);
 
   if (x < w && y < h) {
-    framebuffer[index] = fragmentBuffer[index].color;
+    Fragment & fragment = fragmentBuffer[index];
+    framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
 
     // TODO: add your fragment shader code here
-
+    for (int i = 0; i < numLights; i++) {
+      Light & light = lights[i];
+      framebuffer[index] += 
+        lights[i].emittance * fragment.color * glm::dot(fragment.eyeNor, light.eyePos - fragment.eyePos);
+    }
   }
 }
 
@@ -161,6 +186,12 @@ void rasterizeInit(int w, int h) {
   cudaFree(dev_framebuffer);
   cudaMalloc(&dev_framebuffer, width * height * sizeof(glm::vec3));
   cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+
+  cudaFree(dev_lights);
+  cudaMalloc(&dev_lights, lights.size() * sizeof(Light));
+
+  cudaFree(dev_fragmentMutexes);
+  cudaMalloc(&dev_fragmentMutexes, width * height * sizeof(FragmentMutex));
 
   cudaFree(dev_depth);
   cudaMalloc(&dev_depth, width * height * sizeof(int));
@@ -178,6 +209,19 @@ void initDepth(int w, int h, int * depth)
   {
     int index = x + (y * w);
     depth[index] = INT_MAX;
+  }
+}
+
+__global__
+void initMutexes(int w, int h, FragmentMutex * mutexes) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+  if (x < w && y < h)
+  {
+    int index = x + (y * w);
+    mutexes[index].mutex = 0;
+    mutexes[index].z = FLT_MAX;
   }
 }
 
@@ -640,11 +684,14 @@ void _vertexTransformAndAssembly(
     // Assemble all attribute arraies into the primitive array
     VertexOut & vout = primitive.dev_verticesOut[vid];
     VertexAttributePosition & vpos = primitive.dev_position[vid];
-    // VertexAttributeNormal & vnorm = primitive.dev_normal[vid];
+    VertexAttributeNormal & vnorm = primitive.dev_normal[vid];
     vout.pos = MVP * glm::vec4(vpos, 1.0f);
     vout.pos /= vout.pos.w;
     vout.pos.x = 0.5f * (float)width * (vout.pos.x + 1.0f);
     vout.pos.y = 0.5f * (float)height * (vout.pos.y + 1.0f);
+    glm::vec4 eyePos = MV * glm::vec4(vpos, 1.0f);
+    vout.eyePos = glm::vec3(eyePos / eyePos.w);
+    vout.eyeNor = glm::normalize(MV_normal * vnorm);
   }
 }
 
@@ -694,7 +741,7 @@ int clamp_int(int mn, int x, int mx) {
 
 __global__
 void kernRasterize(int numPrimitives, Primitive* dev_primitives,
-int width, int height, float invWidth, float invHeight, Fragment* fragmentBuffer) {
+int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index < numPrimitives) {
     Primitive & p = dev_primitives[index];
@@ -707,11 +754,24 @@ int width, int height, float invWidth, float invHeight, Fragment* fragmentBuffer
     for (int y = minypix; y <= maxypix; y++) {
       for (int x = minxpix; x <= maxxpix; x++) {
         int fragIdx = (height - 1 - y) * width + (width - 1 - x);
-        if (inTriangle2d(glm::vec2(x, y),
-              glm::vec2(p.v[0].pos),
-              glm::vec2(p.v[1].pos),
-              glm::vec2(p.v[2].pos))) {
-          fragmentBuffer[fragIdx].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
+        glm::vec3 baryCoords = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+        if (isBarycentricCoordInBounds(baryCoords)) {
+          float pos = glm::dot(baryCoords, glm::vec3(p.v[0].pos.z, p.v[1].pos.z, p.v[2].pos.z));
+          bool isSet;
+          do {
+            isSet = atomicCAS(&mutexes[fragIdx].mutex, 0, 1) == 0;
+            if (isSet) {
+              if (pos < mutexes[fragIdx].z) {
+                mutexes[fragIdx].z = pos;
+                fragmentBuffer[fragIdx].color = glm::vec3(0.0f, 0.0f, 1.0f); // blue
+                fragmentBuffer[fragIdx].eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
+                fragmentBuffer[fragIdx].eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
+              }
+            }
+            if (isSet) {
+              mutexes[fragIdx].mutex = 0;
+            }
+          } while (!isSet);
         }
       }
     }
@@ -766,16 +826,43 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
   initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+  initMutexes << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentMutexes);
 
   // TODO: rasterize
   int numPrimitives = totalNumPrimitives;
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
   kernRasterize << < numBlocksForPrimitives, numThreadsPerBlock >> >(
-    numPrimitives, dev_primitives, width, height, 1.0f / (float) width, 1.0f / (float) height, dev_fragmentBuffer);
+    numPrimitives, dev_primitives, 
+    width, height, dev_fragmentBuffer, dev_fragmentMutexes);
+
+  // Offline light transformation, since there aren't many lights
+  for (Light & light : lights) {
+    glm::vec4 eyePos = MV * light.worldPos;
+    light.eyePos = glm::vec3(eyePos / eyePos.w);
+  }
+  cudaMemcpy(dev_lights, lights.data(), lights.size() * sizeof(Light), cudaMemcpyHostToDevice);
+
+  /*Fragment * fragmentBuffer = (Fragment*)malloc(width * height * sizeof(Fragment));
+  cudaMemcpy(fragmentBuffer, dev_fragmentBuffer, width * height * sizeof(Fragment), cudaMemcpyDeviceToHost);
+  for (int y = 399; y < 402; y++) {
+    for (int x = 399; x < 402; x++) {
+      int idx = y * width + x;
+      if (glm::length(fragmentBuffer[idx].color) < 0.01f) {
+        continue;
+      }
+      glm::vec3 c = fragmentBuffer[idx].color;
+      glm::vec3 n = fragmentBuffer[idx].eyeNor;
+      glm::vec3 p = fragmentBuffer[idx].eyePos;
+      printf("%d %d (%f %f %f) (%f %f %f) (%f %f %f) %f\n", x, y, 
+        c.r, c.g, c.b, n.x, n.y, n.z, p.x, p.y, p.z, glm::dot(n, glm::normalize(lights[0].eyePos - p)));
+    }
+  }
+  free(fragmentBuffer);*/
 
   // Copy depthbuffer colors into framebuffer
-  render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+  render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, 
+    lights.size(), dev_lights);
   checkCUDAError("fragment shader");
   // Copy framebuffer into OpenGL buffer for OpenGL previewing
   sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, width, height, dev_framebuffer);
@@ -816,6 +903,9 @@ void rasterizeFree() {
 
   cudaFree(dev_framebuffer);
   dev_framebuffer = NULL;
+
+  cudaFree(dev_lights);
+  dev_lights = NULL;
 
   cudaFree(dev_depth);
   dev_depth = NULL;
