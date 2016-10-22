@@ -651,7 +651,7 @@ void _vertexTransformAndAssembly(
 		posOut.y = (1.0 - posOut.y) * 0.5 * height; // y is row index
 
 
-		// DONE: Apply vertex assembly here
+		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
 		primitive.dev_verticesOut[vid].pos = posOut;  
 		primitive.dev_verticesOut[vid].eyePos = multiplyMV(MV, pos4);
@@ -721,13 +721,15 @@ void _rasterization(
 	if (primitiveIdx >= numPrimitives)
 		return;
 
-	// 1. get AABB for this primitive
-	glm::vec3 tri[3] = {
+	//TODO: linear inerpolation for all attributes except pos
+
+	// set up for barycentric coordinates interpolation
+	// get 3 vertex pos 
+	glm::vec3 tri_pos[3] = {
 		glm::vec3(dev_primitives[primitiveIdx].v[0].pos),
 		glm::vec3(dev_primitives[primitiveIdx].v[1].pos),
 		glm::vec3(dev_primitives[primitiveIdx].v[2].pos)
 	};
-	AABB aabb = getAABBForTriangle(tri);
 
 	// get 3 vertex pos in eye space
 	glm::vec3 tri_eyePos[3] = {
@@ -750,7 +752,10 @@ void _rasterization(
 		dev_primitives[primitiveIdx].v[2].texcoord0
 	};
 
-	// 2. for each pixel inside aabb, fill in a color
+	// get AABB for this primitive
+	AABB aabb = getAABBForTriangle(tri_pos);
+
+	// for each pixel inside aabb, fill in a color
 	glm::vec3 baryCoord;
 	float depth;
 	int pixelIdx;
@@ -760,7 +765,7 @@ void _rasterization(
 		for (int y = glm::max(0, (int)aabb.min.y); y <= glm::min(height -1, (int)aabb.max.y); ++y)
 		{
 			// get barycentrix coordinates
-			baryCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
+			baryCoord = calculateBarycentricCoordinate(tri_pos, glm::vec2(x, y));
 
 			// if is inside the primitive
 			if (isBarycentricCoordInBounds(baryCoord))
@@ -768,7 +773,7 @@ void _rasterization(
 				if (x < 0 || x >= width || y < 0 || y >= height)
 					continue;
 
-				depth = getZAtCoordinate(baryCoord, tri);
+				depth = getZAtCoordinate(baryCoord, tri_pos);
 
 				pixelIdx = x + y * width; // pixel index
 				
