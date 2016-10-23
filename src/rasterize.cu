@@ -25,7 +25,8 @@
 #define TEXTURE_MAP 1
 #define PERSPECTIVE_CORRECT 1
 #define BILINEAR_INTERPOLATION 1
-#define BACKFACE_CULL 0
+#define BACKFACE_CULL 1
+#define NORMAL_INTERPOLATE 1
 
 #define CEL_SHADE 4
 #define SOBEL_GRID 8
@@ -147,7 +148,7 @@ static int width = 0;
 static int height = 0;
 
 #define AMBIENT_LIGHT 0.2f
-std::vector<Light> lights = { Light(glm::vec4(0.0f, 10.0f, 10.0f, 1.0f), 1.0f) };
+std::vector<Light> lights = { Light(glm::vec4(0.0f, 10.0f, 4.0f, 1.0f), 1.0f) };
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
@@ -793,7 +794,14 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
                 fragment.color = glm::vec3(1.0f, 1.0f, 1.0f); // white
 #endif
                 fragment.eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
+#if NORMAL_INTERPOLATE == 1
                 fragment.eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
+#else
+                fragment.eyeNor = glm::normalize(glm::cross(
+                  glm::vec3(p.v[1].eyeNor - p.v[0].eyeNor),
+                  glm::vec3(p.v[2].eyeNor - p.v[0].eyeNor)
+                ));
+#endif
                 }
               }
             if (isSet) {
@@ -872,7 +880,7 @@ void calculateSobelWithShared(int w, int h, Fragment * fragmentBuffer) {
   __shared__ float tile[SOBEL_GRID][SOBEL_GRID];
   __shared__ float sobelx[SOBEL_GRID][SOBEL_GRID];
   __shared__ float sobely[SOBEL_GRID][SOBEL_GRID];
-  float sobelKernel[3][3] = { { -1, 0, 1 }, { -2, 0, 2 }, { -1, 0, 1 } };
+  float sobelKernel[3][3] = { { 3, 0, -3 }, { 10, 0, -10 }, { 3, 0, -3 } };
   if (x < w && y < h) {
     int bx = threadIdx.x;
     int by = threadIdx.y;
@@ -926,8 +934,8 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int 
       framebuffer[index] = totalLight * fragment.color;
 #if CEL_SHADE > 0
       framebuffer[index] = glm::ceil(framebuffer[index] * (float)CEL_SHADE) / (float)CEL_SHADE;
-      float sobel = fragment.sobelx * fragment.sobelx + fragment.sobely * fragment.sobely;
-      if (sobel > 1.0f) framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
+      float sobel = glm::sqrt(fragment.sobelx * fragment.sobelx + fragment.sobely * fragment.sobely);
+      if (sobel > 15.0f) framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
 #endif
     }
     else {
@@ -992,6 +1000,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   thrust::device_ptr<Primitive> dev_thrust_primitivesEnd =
     thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numPrimitives, IsBackfacing());
   numPrimitives = dev_thrust_primitivesEnd - dev_thrust_primitives;
+  printf("%d triangles\n", numPrimitives);
   checkCUDAError("backface culling");
 #endif
 
