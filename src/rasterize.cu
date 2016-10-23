@@ -10,7 +10,9 @@
 #include <cstdio>
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <thrust/device_ptr.h>
 #include <thrust/random.h>
+#include <thrust/remove.h>
 #include <util/checkCUDAError.h>
 #include <util/tiny_gltf_loader.h>
 #include "rasterizeTools.h"
@@ -23,8 +25,13 @@
 #define TEXTURE_MAP 1
 #define PERSPECTIVE_CORRECT 1
 #define BILINEAR_INTERPOLATION 1
+#define BACKFACE_CULL 0
 
-namespace {
+#define CEL_SHADE 4
+#define SOBEL_GRID 8
+#define USE_SHARED_SOBEL 1
+
+namespace rasterizer {
 
   typedef unsigned short VertexIndex;
   typedef glm::vec3 VertexAttributePosition;
@@ -63,6 +70,8 @@ namespace {
     VertexOut v[3];
   };
 
+
+
   struct Fragment {
     glm::vec3 color;
 
@@ -73,6 +82,10 @@ namespace {
     glm::vec3 eyePos;	// eye space position used for shading
     glm::vec3 eyeNor;
 
+    float z;
+    float sobelx;
+    float sobely;
+
     TextureData * diffuseTex;
     int texWidth;
     int texHeight;
@@ -81,7 +94,6 @@ namespace {
   };
 
   struct FragmentMutex {
-    float z;
     int mutex;
   };
 
@@ -116,6 +128,7 @@ namespace {
   };
 
 }
+using namespace rasterizer;
 
 struct Light {
   glm::vec4 worldPos;
@@ -134,7 +147,7 @@ static int width = 0;
 static int height = 0;
 
 #define AMBIENT_LIGHT 0.2f
-std::vector<Light> lights = {Light(glm::vec4(0.0f, 10.0f, 10.0f, 1.0f), 1.0f)};
+std::vector<Light> lights = { Light(glm::vec4(0.0f, 10.0f, 10.0f, 1.0f), 1.0f) };
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
@@ -165,28 +178,7 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
   }
 }
 
-/**
-* Writes fragment colors to the framebuffer
-*/
-__global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int numLights, Light *lights) {
-  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-  int index = x + (y * w);
 
-  if (x < w && y < h) {
-    Fragment & fragment = fragmentBuffer[index];
-    framebuffer[index] = AMBIENT_LIGHT * fragment.color;
-
-    // Lambert shading
-    for (int i = 0; i < numLights; i++) {
-      Light & light = lights[i];
-      float lightStrength = glm::max(0.0f, glm::dot(fragment.eyeNor, glm::normalize(light.eyePos - fragment.eyePos)));
-      framebuffer[index] += 
-        lights[i].emittance * fragment.color * lightStrength;
-    }
-  }
-}
 
 /**
  * Called once at the beginning of the program to allocate memory.
@@ -211,7 +203,7 @@ void rasterizeInit(int w, int h) {
 }
 
 __global__
-void initMutexes(int w, int h, FragmentMutex * mutexes) {
+void initMutexes(int w, int h, FragmentMutex * mutexes, Fragment * fragments) {
   int x = (blockIdx.x * blockDim.x) + threadIdx.x;
   int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 
@@ -219,7 +211,7 @@ void initMutexes(int w, int h, FragmentMutex * mutexes) {
   {
     int index = x + (y * w);
     mutexes[index].mutex = 0;
-    mutexes[index].z = FLT_MAX;
+    fragments[index].z = FLT_MAX;
   }
 }
 
@@ -673,10 +665,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 __global__
 void _vertexTransformAndAssembly(
-    int numVertices,
-    PrimitiveDevBufPointers primitive,
-    glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal,
-    int width, int height) {
+int numVertices,
+PrimitiveDevBufPointers primitive,
+glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal,
+int width, int height) {
 
   // vertex id
   int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -724,9 +716,9 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
     // This is primitive assembly for triangles
     int pid;	// id for cur primitives vector
     if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-        pid = iid / (int)primitive.primitiveType;
-        dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-            = primitive.dev_verticesOut[primitive.dev_indices[iid]];
+      pid = iid / (int)primitive.primitiveType;
+      dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+        = primitive.dev_verticesOut[primitive.dev_indices[iid]];
     }
 
 
@@ -744,9 +736,9 @@ int clamp_int(int mn, int x, int mx) {
 
 __device__ __host__
 glm::vec3 getPixel(int x, int y, int width, int height, int components, TextureData * tex) {
-  /*if (x >= width || y >= height || x < 0 || y < 0) {
+  if (x >= width || y >= height || x < 0 || y < 0) {
     return glm::vec3(0, 0, 0);
-  }*/
+  }
   int texIdx = y * width + x;
   return (1.0f / 255.0f) * glm::vec3(tex[components * texIdx], tex[components * texIdx + 1], tex[components * texIdx + 2]);
 }
@@ -757,6 +749,7 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
   int index = (blockIdx.x * blockDim.x) + threadIdx.x;
   if (index < numPrimitives) {
     Primitive & p = dev_primitives[index];
+    VertexOut & firstVertex = p.v[0];
     glm::vec3 triangle[3] = { glm::vec3(p.v[0].pos), glm::vec3(p.v[1].pos), glm::vec3(p.v[2].pos) };
     AABB boundingBox = getAABBForTriangle(triangle);
     int minxpix = clamp_int(0, boundingBox.min.x, width - 1);
@@ -767,6 +760,7 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
       for (int x = minxpix; x <= maxxpix; x++) {
         int fragIdx = (height - 1 - y) * width + (width - 1 - x);
         Fragment & fragment = fragmentBuffer[fragIdx];
+
         glm::vec3 baryCoords = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
         if (isBarycentricCoordInBounds(baryCoords)) {
           float pos = glm::dot(baryCoords, glm::vec3(p.v[0].pos.z, p.v[1].pos.z, p.v[2].pos.z));
@@ -774,8 +768,8 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
           do {
             isSet = atomicCAS(&mutexes[fragIdx].mutex, 0, 1) == 0;
             if (isSet) {
-              if (pos < mutexes[fragIdx].z) {
-                mutexes[fragIdx].z = pos;
+              if (pos < fragment.z) {
+                fragment.z = pos;
 #if TEXTURE_MAP == 1
                 if (p.v[0].dev_diffuseTex == NULL) {
                   fragment.color = glm::vec3(1.0f, 1.0f, 1.0f); // white
@@ -784,32 +778,33 @@ int width, int height, Fragment* fragmentBuffer, FragmentMutex* mutexes) {
                 else {
 #if PERSPECTIVE_CORRECT == 1
                   glm::vec3 perspectiveBaryCoords = glm::vec3(baryCoords.x / p.v[0].eyePos.z, baryCoords.y / p.v[1].eyePos.z, baryCoords.z / p.v[2].eyePos.z);
+                  float scaleFactor = (1.0f / (perspectiveBaryCoords.x + perspectiveBaryCoords.y + perspectiveBaryCoords.z));
                   fragment.texcoord0 = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0)
-                    * perspectiveBaryCoords * (1.0f / glm::dot(glm::vec3(1.0f, 1.0f, 1.0f), perspectiveBaryCoords));
+                    * perspectiveBaryCoords * scaleFactor;
 #else
                   fragment.texcoord0 = glm::mat3x2(p.v[0].texcoord0, p.v[1].texcoord0, p.v[2].texcoord0) * baryCoords;
 #endif
-                  fragment.texWidth = p.v[0].texWidth;
-                  fragment.texHeight = p.v[0].texHeight;
-                  fragment.texComp = p.v[0].texComp;
-                  fragment.diffuseTex = p.v[0].dev_diffuseTex;
+                  fragment.texWidth = firstVertex.texWidth;
+                  fragment.texHeight = firstVertex.texHeight;
+                  fragment.texComp = firstVertex.texComp;
+                  fragment.diffuseTex = firstVertex.dev_diffuseTex;
                 }
 #else
                 fragment.color = glm::vec3(1.0f, 1.0f, 1.0f); // white
 #endif
                 fragment.eyePos = glm::mat3(p.v[0].eyePos, p.v[1].eyePos, p.v[2].eyePos) * baryCoords;
                 fragment.eyeNor = glm::mat3(p.v[0].eyeNor, p.v[1].eyeNor, p.v[2].eyeNor) * baryCoords;
+                }
               }
-            }
             if (isSet) {
               mutexes[fragIdx].mutex = 0;
             }
-          } while (pos < mutexes[fragIdx].z && !isSet);
+            } while (pos < fragment.z && !isSet);
+          }
         }
       }
     }
   }
-}
 
 __global__
 void kernTextureShader(int width, int height, Fragment* fragmentBuffer) {
@@ -839,6 +834,107 @@ void kernTextureShader(int width, int height, Fragment* fragmentBuffer) {
   }
 }
 
+struct IsBackfacing {
+  __host__ __device__ bool operator () (const Primitive & p) {
+    glm::vec3 normal = glm::normalize(glm::cross(
+      glm::vec3(p.v[1].pos - p.v[0].pos),
+      glm::vec3(p.v[2].pos - p.v[0].pos)));
+    return normal.z < -0;
+  }
+};
+
+__global__
+void calculateSobel(int w, int h, Fragment * fragmentBuffer) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  int index = x + (y * w);
+  float sobelKernel[3][3] = { { -1, 0, 1 }, { -2, 0, 2 }, { -1, 0, 1 } };
+  if (x < w && y < h) {
+    Fragment & fragment = fragmentBuffer[index];
+    for (int i = -1; i <= 1; i++) {
+      for (int j = -1; j <= 1; j++) {
+        if (x + i < w && x + i >= 0 && y + j < h && y + j >= 0) {
+          int sobelIdx = x + i + ((y + j) * w);
+          float dist = (fragmentBuffer[sobelIdx].z > 1e12) ? 1e12 : glm::length(fragmentBuffer[sobelIdx].eyePos);
+          fragment.sobelx += sobelKernel[i + 1][j + 1] * dist;
+          fragment.sobely += sobelKernel[j + 1][i + 1] * dist;
+        }
+      }
+    }
+  }
+}
+
+__global__
+void calculateSobelWithShared(int w, int h, Fragment * fragmentBuffer) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  int index = x + (y * w);
+  __shared__ float tile[SOBEL_GRID][SOBEL_GRID];
+  __shared__ float sobelx[SOBEL_GRID][SOBEL_GRID];
+  __shared__ float sobely[SOBEL_GRID][SOBEL_GRID];
+  float sobelKernel[3][3] = { { -1, 0, 1 }, { -2, 0, 2 }, { -1, 0, 1 } };
+  if (x < w && y < h) {
+    int bx = threadIdx.x;
+    int by = threadIdx.y;
+    Fragment & fragment = fragmentBuffer[index];
+    tile[bx][by] = (fragment.z > 1e12) ? 1e12 : glm::length(fragment.eyePos);
+    sobelx[bx][by] = 0;
+    sobely[bx][by] = 0;
+    __syncthreads();
+
+    for (int i = -1; i <= 1; i++) {
+      for (int j = -1; j <= 1; j++) {
+        if (bx + i < SOBEL_GRID && bx + i >= 0 && by + j < SOBEL_GRID && by + j >= 0) {
+          sobelx[bx][by] += sobelKernel[i + 1][j + 1] * tile[bx + i][by + j];
+          sobely[bx][by] += sobelKernel[j + 1][i + 1] * tile[bx + i][by + j];
+        }
+        else {
+          if (x + i < w && x + i >= 0 && y + j < h && y + j >= 0) {
+            int sobelIdx = x + i + ((y + j) * w);
+            float dist = (fragmentBuffer[sobelIdx].z > 1e12) ? 1e12 : glm::length(fragmentBuffer[sobelIdx].eyePos);
+            sobelx[bx][by] += sobelKernel[i + 1][j + 1] * dist;
+            sobely[bx][by] += sobelKernel[j + 1][i + 1] * dist;
+          }
+        }
+      }
+    }
+    fragment.sobelx = sobelx[bx][by];
+    fragment.sobely = sobely[bx][by];
+  }
+}
+
+/**
+* Writes fragment colors to the framebuffer
+*/
+__global__
+void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, int numLights, Light *lights) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  int index = x + (y * w);
+
+  if (x < w && y < h) {
+    Fragment & fragment = fragmentBuffer[index];
+    if (fragment.z < 1e12) {
+      float totalLight = AMBIENT_LIGHT;
+
+      // Lambert shading
+      for (int i = 0; i < numLights; i++) {
+        Light & light = lights[i];
+        totalLight += light.emittance * glm::max(0.0f,
+          glm::dot(fragment.eyeNor, glm::normalize(light.eyePos - fragment.eyePos)));
+      }
+      framebuffer[index] = totalLight * fragment.color;
+#if CEL_SHADE > 0
+      framebuffer[index] = glm::ceil(framebuffer[index] * (float)CEL_SHADE) / (float)CEL_SHADE;
+      float sobel = fragment.sobelx * fragment.sobelx + fragment.sobely * fragment.sobely;
+      if (sobel > 1.0f) framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
+#endif
+    }
+    else {
+      framebuffer[index] = glm::vec3(0.5f, 0.8f, 1.0f);
+    }
+  }
+}
 
 /**
  * Perform rasterization.
@@ -885,23 +981,34 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   }
 
   cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-  initMutexes << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentMutexes);
+  initMutexes << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentMutexes, dev_fragmentBuffer);
   checkCUDAError("init mutexes");
 
   int numPrimitives = totalNumPrimitives;
-  dim3 numThreadsPerBlock(128);
+
+  // Backface culling
+#if BACKFACE_CULL == 1
+  thrust::device_ptr<Primitive> dev_thrust_primitives(dev_primitives);
+  thrust::device_ptr<Primitive> dev_thrust_primitivesEnd =
+    thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numPrimitives, IsBackfacing());
+  numPrimitives = dev_thrust_primitivesEnd - dev_thrust_primitives;
+  checkCUDAError("backface culling");
+#endif
+
+
+  // Rasterization
+  dim3 numThreadsPerBlock(64);
   dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
   kernRasterize << < numBlocksForPrimitives, numThreadsPerBlock >> >(
-    numPrimitives, dev_primitives, 
+    numPrimitives, dev_primitives,
     width, height, dev_fragmentBuffer, dev_fragmentMutexes);
   checkCUDAError("rasterizer");
 
+  // Filling texture colors
 #if TEXTURE_MAP == 1
   kernTextureShader << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
   checkCUDAError("textureShader");
 #endif
-
-  
 
   // Offline light transformation, since there aren't many lights
   for (Light & light : lights) {
@@ -910,10 +1017,24 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   }
   cudaMemcpy(dev_lights, lights.data(), lights.size() * sizeof(Light), cudaMemcpyHostToDevice);
 
+#if CEL_SHADE > 0
+  dim3 sobelBlockSize2d(SOBEL_GRID, SOBEL_GRID);
+  dim3 sobelBlockCount2d((width - 1) / sobelBlockSize2d.x + 1,
+    (height - 1) / sobelBlockSize2d.y + 1);
+#if USE_SHARED_SOBEL == 1
+  calculateSobelWithShared<< <sobelBlockCount2d, sobelBlockSize2d >> >(width, height, dev_fragmentBuffer);
+#else
+  calculateSobel<< <sobelBlockCount2d, sobelBlockSize2d >> >(width, height, dev_fragmentBuffer);
+#endif
+  checkCUDAError("Sobel");
+#endif
+
   // Copy depthbuffer colors into framebuffer
-  render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, 
+  render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer,
     lights.size(), dev_lights);
   checkCUDAError("fragment shader");
+
+
   // Copy framebuffer into OpenGL buffer for OpenGL previewing
   sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, width, height, dev_framebuffer);
   checkCUDAError("copy render result to pbo");
