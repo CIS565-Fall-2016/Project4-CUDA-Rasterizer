@@ -109,8 +109,8 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
-static int * dev_depth = NULL;	// you might need this buffer when doing depth test
-
+static float * dev_depth = NULL;
+static bool * dev_mutex = NULL;
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
@@ -164,7 +164,10 @@ void rasterizeInit(int w, int h) {
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
 	cudaFree(dev_depth);
-	cudaMalloc(&dev_depth, width * height * sizeof(int));
+	cudaMalloc(&dev_depth, width * height * sizeof(float));
+
+	cudaFree(dev_mutex);
+	cudaMalloc(&dev_mutex, width * height * sizeof(bool));
 
 	checkCUDAError("rasterizeInit");
 }
@@ -675,7 +678,10 @@ __global__ void _rasterize(
 	int totalNumPrimitives, 
 	int width, int height, 
 	Primitive* dev_primitives,
-	Fragment* dev_fragmentBuffer) {
+	Fragment* dev_fragmentBuffer,
+	float* dev_depth,
+	bool* dev_mutex
+	) {
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (pid > totalNumPrimitives) {
 		return;
@@ -686,7 +692,7 @@ __global__ void _rasterize(
 		glm::vec3(dev_primitives[pid].v[2].pos)
 	};
 	AABB aabb = getAABBForTriangle(tri);
-
+	bool set;
 	int maxx = glm::clamp(0, width - 1, (int) aabb.max.x),
 		maxy = glm::clamp(0, height - 1, (int) aabb.max.y);
 	int fid;
@@ -695,11 +701,14 @@ __global__ void _rasterize(
 			fid = (height - j - 1) * width + (width - i - 1);
 			glm::vec3 barycentric = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
 			if (isBarycentricCoordInBounds(barycentric)) {
-				//float z = glm::dot(barycentric, glm::vec3(
-				//	dev_primitives[pid].v[0].pos.z, 
-				//	dev_primitives[pid].v[1].pos.z, 
-				//	dev_primitives[pid].v[2].pos.z)
-				//);
+				float z = glm::dot(barycentric, glm::vec3(
+					dev_primitives[pid].v[0].pos.z, 
+					dev_primitives[pid].v[1].pos.z, 
+					dev_primitives[pid].v[2].pos.z)
+				);
+				do {
+					set = atomicCAS(dev_mu)
+				}
 				dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
 			}
 		}
@@ -758,7 +767,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	// TODO: rasterize
 	dim3 numThreadsPerBlock(128);
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-	_rasterize << <numBlocksForPrimitives, blockSize2d >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer);
+	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer);
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
@@ -805,6 +814,9 @@ void rasterizeFree() {
 
 	cudaFree(dev_depth);
 	dev_depth = NULL;
+
+	cudaFree(dev_mutex);
+	dev_mutex = NULL;
 
     checkCUDAError("rasterize Free");
 }
