@@ -53,6 +53,7 @@ namespace {
 
 	struct Primitive {
 		PrimitiveType primitiveType = Triangle;	// C++ 11 init
+		TextureData* dev_diffuseTex;
 		VertexOut v[3];
 	};
 
@@ -65,8 +66,8 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;
-		// VertexAttributeTexcoord texcoord0;
-		// TextureData* dev_diffuseTex;
+		 VertexAttributeTexcoord texcoord0;
+		 TextureData* dev_diffuseTex;
 		// ...
 	};
 
@@ -146,7 +147,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     if (x < w && y < h) {
         //framebuffer[index] = fragmentBuffer[index].color;
 		glm::vec3 light = glm::normalize(glm::vec3(1, 3, 5));
-		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].eyeNor * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
+		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
 		framebuffer[index] = diffuse;
 
     }
@@ -711,10 +712,7 @@ void _rasterizePrims(
 		glm::vec3 eyePosTri[3] = { primitive.v[0].eyePos, primitive.v[1].eyePos, primitive.v[2].eyePos };
 		glm::vec3 eyeNorTri[3] = { primitive.v[0].eyeNor, primitive.v[1].eyeNor, primitive.v[2].eyeNor };
 		
-		glm::vec3 color;
-		//color[pid % 3] = 1;
-		color[1] = 1;
-		//color = primitive.v[0].eyeNor;
+		glm::vec3 color(1.f);
 
 		glm::vec2 pix;
 		for (pix.x = minX; pix.x < maxX; pix.x++) {
@@ -723,11 +721,11 @@ void _rasterizePrims(
 				
 				glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, pix);
 				if (isBarycentricCoordInBounds(barycentricCoord)) {
-					int depth = getZAtCoordinate(barycentricCoord, tri) * INT_MAX;
+					int depth = -getZAtCoordinate(barycentricCoord, tri) * INT_MAX;
 					atomicMin(&dev_depth[index], depth);
 					if (depth == dev_depth[index]) {
 						dev_fragmentBuffer[index].color = color;
-						//interpolate eyepos and eyenor
+						//interpolate
 						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * eyePosTri[0] + barycentricCoord.y * eyePosTri[1] + barycentricCoord.z * eyePosTri[2];
 						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * eyeNorTri[0] + barycentricCoord.y * eyeNorTri[1] + barycentricCoord.z * eyeNorTri[2];
 						
