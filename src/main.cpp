@@ -95,9 +95,18 @@ void mainLoop() {
 //-------------------------------
 //---------RUNTIME STUFF---------
 //-------------------------------
+
+/**
+ * parameters for cow.gltf
+ */
+//float scale = 0.1f;
+//float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
+//float x_angle = 0.0f, y_angle = - 30.0f / 180.0f * PI;
+//float fov = 65.0f;
+
 float scale = 1.0f;
-float x_trans = 0.0f, y_trans = 0.0f, z_trans = -8.0f;
-float x_angle = 10.0f, y_angle = 0.0f;
+float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
+float x_angle = 0.0f, y_angle = -30.0f / 180.0f * PI;
 float fov = 65.0f;
 
 void runCuda() {
@@ -195,6 +204,7 @@ bool init(const tinygltf::Scene & scene) {
     glUseProgram(passthroughProgram);
     glActiveTexture(GL_TEXTURE0);
 
+	rasterization_mode = RASTERIZATION_MODE::Solid;
     return true;
 }
 
@@ -331,9 +341,35 @@ void errorCallback(int error, const char *description) {
 }
 
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, GL_TRUE);
-    }
+	if (action == GLFW_PRESS)
+	{
+		switch (key)
+		{
+		case GLFW_KEY_ESCAPE:
+			glfwSetWindowShouldClose(window, GL_TRUE);
+			break;
+		case GLFW_KEY_1:
+			printf("================================\n");
+			printf("========== Point MODE ==========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Point;
+			break;
+		case GLFW_KEY_2:
+			printf("================================\n");
+			printf("======== Wireframe MODE ========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Wireframe;
+			break;
+		case GLFW_KEY_3:
+			printf("================================\n");
+			printf("========== Solid MODE ==========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Solid;
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 //----------------------------

@@ -124,6 +124,10 @@ static glm::vec3 *dev_framebuffer = NULL;
 //since atomicMin only supports int?
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
+
+//raterization mode
+RASTERIZATION_MODE rasterization_mode;
+
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
@@ -715,7 +719,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
  * https://www.comp.nus.edu.sg/~lowkl/publications/lowk_persp_interp_techrep.pdf
  */
 __global__ 
-void _rasterization(
+void _rasterizationSolidMode(
 	int numPrimitives,
 	Primitive* dev_primitives,
 	int * dev_depth,
@@ -735,9 +739,9 @@ void _rasterization(
 	// set up for barycentric coordinates interpolation
 	// get 3 vertex pos 
 	glm::vec3 tri_pos[3] = {
-		glm::vec3(dev_primitives[primitiveIdx].v[0].pos),
-		glm::vec3(dev_primitives[primitiveIdx].v[1].pos),
-		glm::vec3(dev_primitives[primitiveIdx].v[2].pos)
+		glm::vec3(primitive.v[0].pos),
+		glm::vec3(primitive.v[1].pos),
+		glm::vec3(primitive.v[2].pos)
 	};
 
 	
@@ -745,9 +749,9 @@ void _rasterization(
 #if PERSPECTIVE_CORRECT == 1
 	// get z value of eye space position
 	float z_eyePos[3] = {
-		dev_primitives[primitiveIdx].v[0].eyePos.z,
-		dev_primitives[primitiveIdx].v[1].eyePos.z,
-		dev_primitives[primitiveIdx].v[2].eyePos.z
+		primitive.v[0].eyePos.z,
+		primitive.v[1].eyePos.z,
+		primitive.v[2].eyePos.z
 	};
 
 #endif
@@ -821,15 +825,164 @@ void _rasterization(
 #endif
 
 					dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3); // black
-					dev_fragmentBuffer[pixelIdx].dev_diffuseTex = dev_primitives[primitiveIdx].dev_diffuseTex;
-					dev_fragmentBuffer[pixelIdx].diffuseTexWidth = dev_primitives[primitiveIdx].diffuseTexWidth;
-					dev_fragmentBuffer[pixelIdx].diffuseTexHeight = dev_primitives[primitiveIdx].diffuseTexHeight;
-					dev_fragmentBuffer[pixelIdx].diffuseTexStride = dev_primitives[primitiveIdx].diffuseTexStride;
+					dev_fragmentBuffer[pixelIdx].dev_diffuseTex = primitive.dev_diffuseTex;
+					dev_fragmentBuffer[pixelIdx].diffuseTexWidth = primitive.diffuseTexWidth;
+					dev_fragmentBuffer[pixelIdx].diffuseTexHeight = primitive.diffuseTexHeight;
+					dev_fragmentBuffer[pixelIdx].diffuseTexStride = primitive.diffuseTexStride;
 
 				}
 			}
 			
 		}
+	}
+
+}
+
+/**
+*	point mode rasterization
+*/
+__global__
+void _rasterizationPointMode(
+	int numPrimitives,
+	Primitive* dev_primitives,
+	int * dev_depth,
+	Fragment * dev_fragmentBuffer,
+	int width, int height)
+{
+	int primitiveIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	if (primitiveIdx >= numPrimitives)
+		return;
+
+	Primitive & primitive = dev_primitives[primitiveIdx];
+
+	for (int i = 0; i < 3; i++)
+	{
+		int x = primitive.v[i].pos.x;
+		int y = primitive.v[i].pos.y;
+		if (x >= 0 && x < width && y >= 0 && y < height)
+		{
+			int depth = INT_MAX * primitive.v[i].pos.z;
+			int pixelIdx = x + y * width;
+
+			atomicMin(&dev_depth[pixelIdx], depth);
+
+			if (dev_depth[pixelIdx] == depth)
+			{
+				dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+				dev_fragmentBuffer[pixelIdx].eyePos = primitive.v[i].eyePos;
+				dev_fragmentBuffer[pixelIdx].eyeNor = primitive.v[i].eyeNor;
+				dev_fragmentBuffer[pixelIdx].texcoord0 = primitive.v[i].texcoord0;
+
+				dev_fragmentBuffer[pixelIdx].dev_diffuseTex = primitive.dev_diffuseTex;
+				dev_fragmentBuffer[pixelIdx].diffuseTexWidth = primitive.diffuseTexWidth;
+				dev_fragmentBuffer[pixelIdx].diffuseTexHeight = primitive.diffuseTexHeight;
+				dev_fragmentBuffer[pixelIdx].diffuseTexStride = primitive.diffuseTexStride;
+			}
+
+		}
+	}
+}
+
+/**
+* wireframe mode rasterization
+*/
+__global__
+void _rasterizationWireframeMode(
+	int numPrimitives,
+	Primitive* dev_primitives,
+	int * dev_depth,
+	Fragment * dev_fragmentBuffer,
+	int width, int height)
+{
+	int primitiveIdx = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	if (primitiveIdx >= numPrimitives)
+		return;
+
+	Primitive & primitive = dev_primitives[primitiveIdx];
+
+	for (int i = 0; i < 3; i++)
+	{
+		VertexOut & startPoint = primitive.v[i];
+		VertexOut & endPoint = primitive.v[(i + 1) % 3];
+
+		int xRange = (int)endPoint.pos.x - (int)startPoint.pos.x;
+		int yRange = (int)endPoint.pos.y - (int)startPoint.pos.y;
+		int dx = xRange > 0 ? 1 : -1;
+		int dy = yRange > 0 ? 1 : -1;
+
+		if (glm::abs(xRange) > glm::abs(yRange)) // x - major fill
+		{
+			int x = startPoint.pos.x;
+			int y;
+			int targetX = (int)endPoint.pos.x;
+
+			while (x != targetX)
+			{
+				float ratio = glm::abs(float(x) - startPoint.pos.x) / float(glm::abs(xRange));
+				y =  ratio * yRange + startPoint.pos.y;
+
+				if (x >= 0 && x < width && y >= 0 && y < height)
+				{
+					int depth = INT_MAX * ((1 - ratio) * startPoint.pos.z + ratio * endPoint.pos.z);
+					int pixelIdx = x + y * width;
+
+					atomicMin(&dev_depth[pixelIdx], depth);
+
+					if (dev_depth[pixelIdx] == depth)
+					{
+						dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+						dev_fragmentBuffer[pixelIdx].eyePos = (1 - ratio) * startPoint.eyePos + ratio * endPoint.eyePos;
+						dev_fragmentBuffer[pixelIdx].eyeNor = (1 - ratio) * startPoint.eyeNor + ratio * endPoint.eyeNor;
+						dev_fragmentBuffer[pixelIdx].texcoord0 = (1 - ratio) * startPoint.texcoord0 + ratio * endPoint.texcoord0;
+
+						dev_fragmentBuffer[pixelIdx].dev_diffuseTex = primitive.dev_diffuseTex;
+						dev_fragmentBuffer[pixelIdx].diffuseTexWidth = primitive.diffuseTexWidth;
+						dev_fragmentBuffer[pixelIdx].diffuseTexHeight = primitive.diffuseTexHeight;
+						dev_fragmentBuffer[pixelIdx].diffuseTexStride = primitive.diffuseTexStride;
+					}
+				}
+
+				x += dx;
+			}
+		}
+		else // y - major
+		{
+			int y = startPoint.pos.y;
+			int x;
+			int targetY = (int)endPoint.pos.y;
+
+			while (y != targetY)
+			{
+				float ratio = glm::abs(float(y) - startPoint.pos.y) / float(glm::abs(yRange));
+				x = ratio * xRange + startPoint.pos.x;
+
+				if (x >= 0 && x < width && y >= 0 && y < height)
+				{
+					int depth = INT_MAX * ((1 - ratio) * startPoint.pos.z + ratio * endPoint.pos.z);
+					int pixelIdx = x + y * width;
+
+					atomicMin(&dev_depth[pixelIdx], depth);
+
+					if (dev_depth[pixelIdx] == depth)
+					{
+						dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+						dev_fragmentBuffer[pixelIdx].eyePos = (1 - ratio) * startPoint.eyePos + ratio * endPoint.eyePos;
+						dev_fragmentBuffer[pixelIdx].eyeNor = (1 - ratio) * startPoint.eyeNor + ratio * endPoint.eyeNor;
+						dev_fragmentBuffer[pixelIdx].texcoord0 = (1 - ratio) * startPoint.texcoord0 + ratio * endPoint.texcoord0;
+
+						dev_fragmentBuffer[pixelIdx].dev_diffuseTex = primitive.dev_diffuseTex;
+						dev_fragmentBuffer[pixelIdx].diffuseTexWidth = primitive.diffuseTexWidth;
+						dev_fragmentBuffer[pixelIdx].diffuseTexHeight = primitive.diffuseTexHeight;
+						dev_fragmentBuffer[pixelIdx].diffuseTexStride = primitive.diffuseTexStride;
+					}
+				}
+
+				y += dy;
+			}
+		}
+
 	}
 
 }
@@ -879,6 +1032,12 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 #if BILINEAR_INTERP == 1
 		Fragment & frag = fragmentBuffer[index];
 
+		if (frag.dev_diffuseTex == NULL)
+		{
+			framebuffer[index] = frag.eyeNor;
+			return;
+		}
+
 		float fx = frag.texcoord0.x * frag.diffuseTexWidth;
 		float fy = frag.texcoord0.y * frag.diffuseTexHeight;
 		int tx = glm::max(0, glm::min(int(fx), frag.diffuseTexWidth - 1));
@@ -911,6 +1070,12 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 #else
 
 		Fragment & frag = fragmentBuffer[index];
+
+		if (frag.dev_diffuseTex == NULL)
+		{
+			framebuffer[index] = frag.eyeNor;
+			return;
+		}
 
 		int tx = frag.texcoord0.x * frag.diffuseTexWidth; 
 		int ty = frag.texcoord0.y * frag.diffuseTexHeight;
@@ -988,13 +1153,42 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		dim3 numThreadsPerBlock(threadsPerBlock);
 		dim3 numBlocksForPrimitives((totalNumPrimitives + threadsPerBlock - 1) / threadsPerBlock);
 
-		_rasterization << <numBlocksForPrimitives, numThreadsPerBlock >> >(
-			totalNumPrimitives,
-			dev_primitives,
-			dev_depth,
-			dev_fragmentBuffer,
-			width,
-			height);
+		switch (rasterization_mode)
+		{
+		case RASTERIZATION_MODE::Point:
+			_rasterizationPointMode << <numBlocksForPrimitives, numThreadsPerBlock >> >(
+				totalNumPrimitives,
+				dev_primitives,
+				dev_depth,
+				dev_fragmentBuffer,
+				width,
+				height);
+			break;
+
+		case RASTERIZATION_MODE::Wireframe:
+			_rasterizationWireframeMode << <numBlocksForPrimitives, numThreadsPerBlock >> >(
+				totalNumPrimitives,
+				dev_primitives,
+				dev_depth,
+				dev_fragmentBuffer,
+				width,
+				height);
+			break;
+
+		case RASTERIZATION_MODE::Solid:
+			_rasterizationSolidMode << <numBlocksForPrimitives, numThreadsPerBlock >> >(
+				totalNumPrimitives,
+				dev_primitives,
+				dev_depth,
+				dev_fragmentBuffer,
+				width,
+				height);
+			break;
+
+		default:
+			break;
+		}
+		
 		checkCUDAError("rasterization");
 	}
 
