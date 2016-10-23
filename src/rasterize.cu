@@ -13,6 +13,8 @@
  
 #define USETEXTURE 1
 #define USELIGHT 1
+#define USEBILINFILTER 1
+#define USEPERSPECTIVECORRECTION 1
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -626,6 +628,7 @@ __device__ __host__ int getMax(int a, int b){
 		return b;
 	}
 }
+ 
 __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 	int idx = threadIdx.x + (blockIdx.x*blockDim.x);
 	int idy = threadIdx.y + (blockIdx.y*blockDim.y);
@@ -637,7 +640,27 @@ __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 			float tiy = 0.5f + curFrag.texcoord0.y * (curFrag.texHeight - 1);
 			int twidth = curFrag.texWidth;
 			int theight = curFrag.texHeight;
-			curFrag.color = getTextureVal(tix, tiy, twidth, theight,curFrag.dev_diffuseTex, curFrag.texture);
+#if USEBILINFILTER==1
+			//reference https://en.wikipedia.org/wiki/Bilinear_filtering
+			float u = tix*1 - 0.5;
+			float v = tiy*1 - 0.5;
+			//float u = tix;
+			//float v = tiy;
+			float x = glm::floor(u);
+			float y = glm::floor(v);
+			float u_ratio = u - x;
+			float v_ratio = v - y;
+			float u_opposite = 1.0f - u_ratio;
+			float v_opposite = 1.0f - v_ratio;
+			glm::vec3 t00 = getTextureVal(x, y, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
+			glm::vec3 t01 = getTextureVal(x, y + 1, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
+			glm::vec3 t10 = getTextureVal(x + 1, y, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
+			glm::vec3 t11 = getTextureVal(x + 1, y + 1, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
+ 
+			curFrag.color = (t00*u_opposite + t10*u_ratio)*v_opposite + (t01*u_opposite + t11*u_ratio)*v_ratio;
+#else
+			curFrag.color = getTextureVal(tix, tiy, twidth, theight, curFrag.dev_diffuseTex, curFrag.texture);
+#endif
 		}
 	}
 	
