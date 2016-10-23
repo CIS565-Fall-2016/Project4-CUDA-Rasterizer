@@ -54,15 +54,15 @@ namespace {
      glm::vec3 eyePos;  // eye space position used for shading
      glm::vec3 eyeNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
     // glm::vec3 col;
-     glm::vec2 texcoord0;
-     TextureData* dev_diffuseTex = NULL;
-    // int texWidth, texHeight;
-    // ...
   };
 
   struct Primitive {
     PrimitiveType primitiveType = Triangle; // C++ 11 init
     Vertex v[3];
+    glm::vec2 texcoord0;
+    TextureData* dev_diffuseTex = NULL;
+    // int texWidth, texHeight;
+    // ...
   };
 
   struct Fragment {
@@ -739,15 +739,16 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
   range(i, 0, height) { 
     range(j, 0, width) {
       int index = getIndex(i, j, width);
-        Fragment &fragment = fragments[index];
-		fragment.color = glm::vec3(0.0f);
 
-  //    int depth = getFragmentDepth(i, j, tri);
+		  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+      if (isBarycentricCoordInBounds(barycentricCoord)) {
+        int depth = getFragmentDepth(i, j, tri);
 
-  //    // assign fragEyePos.z to dev_depth[i] iff it is smaller 
-  //    // (fragment is closer to camera)
-  //    int index = getIndex(i, j, width);
-  //    atomicMin(depths + index, depth);
+        // assign fragEyePos.z to dev_depth[i] iff it is smaller 
+        // (fragment is closer to camera)
+        int index = getIndex(i, j, width);
+        atomicMin(depths + index, depth);
+      }
     }
   }
 
@@ -756,20 +757,22 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
   range(i, 0, height) {
     range(j, 0, width) { 
       int index = getIndex(i, j, width);
-      //int depth = getFragmentDepth(i, j, tri);
-      //if (depth < depths[index] + EPSILON) {
-	  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
-	  if (isBarycentricCoordInBounds(barycentricCoord)) {
-        Fragment &fragment = fragments[index];
-        //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
+      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+      if (isBarycentricCoordInBounds(barycentricCoord)) {
 
-        //fragment.dev_diffuseTex = vertex.dev_diffuseTex;
-        //fragment.eyeNor = vertex.eyeNor;
-        //fragment.eyePos = vertex.eyePos;
-        //fragment.texcoord0 = vertex.texcoord0;
+        int depth = getFragmentDepth(i, j, tri);
+        if (depth == depths[index]) {
+          Fragment &fragment = fragments[index];
+          //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-        ////TODO: get rid of this
-        fragment.color = glm::vec3(1.0f);
+          //fragment.dev_diffuseTex = vertex.dev_diffuseTex;
+          //fragment.eyeNor = vertex.eyeNor;
+          //fragment.eyePos = vertex.eyePos;
+          //fragment.texcoord0 = vertex.texcoord0;
+
+          ////TODO: get rid of this
+          fragment.color = glm::vec3(1.0f);
+        }
       }
     }
   }
