@@ -97,7 +97,7 @@ void mainLoop() {
 //-------------------------------
 
 /**
- * parameters for cow.gltf
+ * parameters for cow.gltf using 1
  */
 #if 0
 float scale = 0.1f;
