@@ -37,6 +37,7 @@ namespace {
 		glm::vec2 texcoord0;
 		TextureData* dev_diffuseTex = NULL;
 		int texWidth, texHeight;
+		int texture;
 		// ...
 	};
 
@@ -46,6 +47,7 @@ namespace {
 
 		TextureData* dev_diffuseTex;
 		int texWidth, texHeight;
+		int texture;
 	};
 
 	struct Fragment {
@@ -60,6 +62,7 @@ namespace {
 		VertexAttributeTexcoord texcoord0;
 		TextureData* dev_diffuseTex;
 		int texWidth, texHeight;
+		int texture;
 		// ...
 	};
 
@@ -77,18 +80,14 @@ namespace {
 		VertexAttributeTexcoord* dev_texcoord0;
 
 		// Materials, add more attributes when needed
+ 
+		// TODO: add more attributes when needed
 		TextureData* dev_diffuseTex;
-		int diffuseTexWidth;
-		int diffuseTexHeight;
-		// TextureData* dev_specularTex;
-		// TextureData* dev_normalTex;
-		// ...
+		int texWidth, texHeight;
+		int texture;
 
 		// Vertex Out, vertex used for rasterization, this is changing every frame
 		VertexOut* dev_verticesOut;
-
-		// TODO: add more attributes when needed
-		int texWidth, texHeight;
 	};
 
 }

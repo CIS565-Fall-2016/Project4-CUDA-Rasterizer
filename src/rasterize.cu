@@ -12,7 +12,7 @@
 #include "common.h"
  
 #define USETEXTURE 1
-
+#define USELIGHT 1
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -38,46 +38,32 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 /**
 * Writes fragment colors to the framebuffer
 */
-__host__ __device__ static
-glm::vec3 getRGB(const TextureData* tex, int idx)
-{
-	return glm::vec3((float)(tex[idx]) / 255.f, (float)(tex[idx + 1]) / 255.f, (float)(tex[idx + 2]) / 255.f);
+ 
+__device__ __host__
+glm::vec3 getTextureVal(int x, int y, int width, int height, TextureData * tex, int texture ) {
+ 
+	if (x < width && y < height&&x >= 0 && y >= 0){
+		int id = x + y*width;
+		int id0 = texture*id;
+		return  glm::vec3(tex[id0], tex[id0 + 1], tex[id0 + 2])/255.0f;
+	}
+	return glm::vec3(0.0f);
+ 
 }
-
 __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	int index = x + (y * w);
-
- 
-	glm::vec3 rgb;
+	 
 	glm::vec3 light = glm::normalize(glm::vec3(1, 2, 3));
-	int texwidth = fragmentBuffer[index].texWidth;
-	int texheight = fragmentBuffer[index].texHeight;
 
-
-	if (x < w && y < h && x > 0 && y > 0) {
+	if (x < w && y < h  ) {
+		Fragment & curFrag = fragmentBuffer[index];
 		framebuffer[index] = fragmentBuffer[index].color;
-#ifndef USETEXTURE		
+#ifdef USELIGHT		
 		framebuffer[index] *= glm::dot(light, fragmentBuffer[index].eyeNor);
-#endif
-		// TODO: add your fragment shader code here
-#ifdef USETEXTURE
-		if (fragmentBuffer[index].dev_diffuseTex != NULL){
-			TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
-			int xtex = fragmentBuffer[index].texcoord0.x*texwidth;
-			int ytex = fragmentBuffer[index].texcoord0.y*texheight;
-			int idx = (xtex + ytex*texheight) * 3;
-			rgb = getRGB(tex, idx);
-			framebuffer[index] = rgb*glm::dot(light, fragmentBuffer[index].eyeNor);
-		}
-#endif
-		//else{
-		//	framebuffer[index] = fragmentBuffer[index].eyeNor;
-
-		//}
-		
+#endif		
 	}
 }
 
@@ -455,6 +441,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					TextureData* dev_diffuseTex = NULL;
 					int diffuseTexWidth = 0;
 					int diffuseTexHeight = 0;
+
+					//Added here 
+					int texture = 0;
+					///////////////////////////
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -470,8 +460,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 									cudaMalloc(&dev_diffuseTex, s);
 									cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 
-									diffuseTexWidth = image.width;
+									diffuseTexWidth = image.width;//here changed
 									diffuseTexHeight = image.height;
+									texture = image.component;
 
 									checkCUDAError("Set Texture Image data");
 								}
@@ -511,9 +502,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						dev_normal,
 						dev_texcoord0,
 
-						dev_diffuseTex,
+						dev_diffuseTex,//here changed
 						diffuseTexWidth,
 						diffuseTexHeight,
+						texture,
 
 						dev_vertexOut	//VertexOut
 					});
@@ -577,9 +569,14 @@ int width, int height) {
 		glm::vec4 ndc = mvpos / mvpos.w;
 		ndc.x = (1 - ndc.x)*width / 2;
 		ndc.y = (1 - ndc.y)*height / 2;
-		primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
-		primitive.dev_verticesOut[vid].pos = ndc;
-
+		//add texture here
+		primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
+		primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];		
+		primitive.dev_verticesOut[vid].texHeight = primitive.texHeight;
+		primitive.dev_verticesOut[vid].texWidth = primitive.texWidth;
+		primitive.dev_verticesOut[vid].texture = primitive.texture;
+		
+		primitive.dev_verticesOut[vid].pos = ndc;		 
 		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 		primitive.dev_verticesOut[vid].eyePos = eyepos;
 
@@ -629,11 +626,28 @@ __device__ __host__ int getMax(int a, int b){
 		return b;
 	}
 }
+__global__ void kernTextureMap(int width, int height, Fragment * fragments){
+	int idx = threadIdx.x + (blockIdx.x*blockDim.x);
+	int idy = threadIdx.y + (blockIdx.y*blockDim.y);
+	if (idx < width&&idy < height){
+		int index = idx + idy*width;
+		Fragment & curFrag = fragments[index];
+		if (curFrag.dev_diffuseTex != NULL){ 
+			float tix = 0.5f + curFrag.texcoord0.x * (curFrag.texWidth - 1);
+			float tiy = 0.5f + curFrag.texcoord0.y * (curFrag.texHeight - 1);
+			int twidth = curFrag.texWidth;
+			int theight = curFrag.texHeight;
+			curFrag.color = getTextureVal(tix, tiy, twidth, theight,curFrag.dev_diffuseTex, curFrag.texture);
+		}
+	}
+	
+}
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
 	if (index < n){
 		Primitive & curPrim = primitives[index];
+		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
 			glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
 			AABB aabb = getAABBForTriangle(triangle);
@@ -657,10 +671,12 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 							curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
 							curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
 							curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
-							curFrag.dev_diffuseTex = curPrim.dev_diffuseTex;
-							curFrag.texHeight = curPrim.texHeight;
-							curFrag.texWidth = curPrim.texWidth;
-
+							//add texture here
+							curFrag.dev_diffuseTex = vertex0.dev_diffuseTex;
+							curFrag.texHeight = vertex0.texHeight;
+							curFrag.texWidth = vertex0.texWidth;
+							curFrag.texture = vertex0.texture;
+							//add color here (in case no texture)
 							curFrag.color = barcen.x*curPrim.v[0].col + barcen.y*curPrim.v[1].col + barcen.z*curPrim.v[2].col;
 							
 						}
@@ -720,6 +736,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	dim3 numBlocksPrims((totalNumPrimitives + blockSize - 1) / blockSize);
 	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer);
 	checkCUDAError("rasterize wrong");
+
+#ifdef USETEXTURE
+	kernTextureMap << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
+	checkCUDAError("textur error");
+#endif
 
 	// Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
