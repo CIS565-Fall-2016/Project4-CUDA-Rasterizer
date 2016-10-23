@@ -11,6 +11,8 @@
 #include "rasterize.h"
 #include "common.h"
  
+#define USETEXTURE 1
+
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -57,20 +59,25 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
 	if (x < w && y < h && x > 0 && y > 0) {
 		framebuffer[index] = fragmentBuffer[index].color;
+#ifndef USETEXTURE		
+		framebuffer[index] *= glm::dot(light, fragmentBuffer[index].eyeNor);
+#endif
 		// TODO: add your fragment shader code here
-		//if (fragmentBuffer[index].dev_diffuseTex != NULL){
-		//	TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
-		//	int xtex = fragmentBuffer[index].texcoord0.x*texwidth;
-		//	int ytex = fragmentBuffer[index].texcoord0.y*texheight;
-		//	int idx = (xtex + ytex*texheight) * 3;
-		//	rgb = getRGB(tex, idx);
-		//	framebuffer[index] = rgb*glm::dot(light, fragmentBuffer[index].eyeNor);
-		//}
+#ifdef USETEXTURE
+		if (fragmentBuffer[index].dev_diffuseTex != NULL){
+			TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
+			int xtex = fragmentBuffer[index].texcoord0.x*texwidth;
+			int ytex = fragmentBuffer[index].texcoord0.y*texheight;
+			int idx = (xtex + ytex*texheight) * 3;
+			rgb = getRGB(tex, idx);
+			framebuffer[index] = rgb*glm::dot(light, fragmentBuffer[index].eyeNor);
+		}
+#endif
 		//else{
 		//	framebuffer[index] = fragmentBuffer[index].eyeNor;
 
 		//}
-		framebuffer[index] *= glm::dot(light,fragmentBuffer[index].eyeNor);
+		
 	}
 }
 
