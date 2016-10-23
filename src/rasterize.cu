@@ -614,6 +614,14 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 /**
 * Perform rasterization.
 */
+__device__ __host__ int getMax(int a, int b){
+	if (a > b){
+		return a;
+	}
+	else{
+		return b;
+	}
+}
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
@@ -623,14 +631,14 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 			glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
 			AABB aabb = getAABBForTriangle(triangle);
 			//brute force baricentric 
-			int xmin = aabb.min.x;
+			int xmin =   aabb.min.x ;
 			int xmax = aabb.max.x;
-			int ymin = aabb.min.y;
+			int ymin =   aabb.min.y ;
 			int ymax = aabb.max.y;
 
 			int fixedDepth;
-			for (int x = xmin; x < xmax; x++){
-				for (int y = ymin; y < ymax; y++){
+			for (int x = xmin; x <= xmax; x++){
+				for (int y = ymin; y <= ymax; y++){
 					int pid = x + y*width;
 					glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
 					if (isBarycentricCoordInBounds(barcen)){
