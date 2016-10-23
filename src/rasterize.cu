@@ -145,11 +145,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
         //framebuffer[index] = fragmentBuffer[index].color;
-		glm::vec3 light = glm::normalize(-1.0f * glm::vec3(-1, -1, -1));
-		glm::vec3 ambient = glm::vec3(0.1, 0.1, 0.1);
-		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
+		glm::vec3 light = glm::normalize(glm::vec3(1, 3, 5));
+		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].eyeNor * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
 		framebuffer[index] = diffuse;
-		// TODO: add your fragment shader code here
 
     }
 }
@@ -748,14 +746,13 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
 		(height - 1) / blockSize2d.y + 1);
-
+	dim3 numThreadsPerBlock(128);
 	// Execute your rasterization pipeline here
 	// (See README for rasterization pipeline outline.)
 
 	// Vertex Process & primitive assembly
 	{
 		curPrimitiveBeginId = 0;
-		dim3 numThreadsPerBlock(128);
 
 		auto it = mesh2PrimitivesMap.begin();
 		auto itEnd = mesh2PrimitivesMap.end();
@@ -787,7 +784,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
-	// TODO: rasterize
+	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	_rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(width, height, totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth);
+	checkCUDAError("rasterize primitives");
 
 
 
