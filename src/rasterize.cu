@@ -759,9 +759,9 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 					atomicMin(&depths[pid], fixedDepth);
 					if (depths[pid] == fixedDepth){
 						Fragment & curFrag = fragments[pid];
-						curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.x*curPrim.v[1].texcoord0 + barcen.x*curPrim.v[2].texcoord0;
-						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.x*curPrim.v[1].eyeNor + barcen.x*curPrim.v[2].eyeNor;
-						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.x*curPrim.v[1].eyePos + barcen.x*curPrim.v[2].eyePos;
+						curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
+						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
+						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
 						curFrag.dev_diffuseTex = curPrim.dev_diffuseTex;
 						curFrag.texHeight = curPrim.texHeight;
 						curFrag.texWidth = curPrim.texWidth;
