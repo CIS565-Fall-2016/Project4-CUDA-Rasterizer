@@ -7,6 +7,7 @@
  */
 
 #include <iostream>
+#include <iomanip>
 #include <cstdio>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -35,6 +36,13 @@ std::string utilityCore::convertIntToString(int number) {
     std::stringstream ss;
     ss << number;
     return ss.str();
+}
+
+std::string utilityCore::convertFloatToString(float number)
+{
+	std::stringstream ss;
+	ss << std::fixed << std::setprecision(2) << number;
+	return ss.str();
 }
 
 glm::vec3 utilityCore::clampRGB(glm::vec3 color) {

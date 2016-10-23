@@ -99,3 +99,94 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
            + barycentricCoord.y * tri[1].z
            + barycentricCoord.z * tri[2].z);
 }
+
+// For perspective correct linear interpolation
+__host__ __device__ static
+float getFloatAtCoordinate(const glm::vec3 barycentricCoord, float a0, float a1, float a2)
+{
+	return barycentricCoord.x * a0 + barycentricCoord.y * a1 + barycentricCoord.z * a2;
+}
+
+__host__ __device__ static
+glm::vec3 getVec3AtCoordinate(const glm::vec3 &abc, const glm::vec3 &v1, const glm::vec3 &v2, const glm::vec3 &v3)
+{
+	return abc.x * v1 + abc.y * v2 + abc.z * v3;
+}
+
+__host__ __device__ static
+glm::vec2 getVec2AtCoordinate(const glm::vec3 &abc, const glm::vec2 &v1, const glm::vec2 &v2, const glm::vec2 &v3)
+{
+	return abc.x * v1 + abc.y * v2 + abc.z * v3;
+}
+
+__host__ __device__ static
+void projectPointOntoAxis(const glm::vec2 &axis, const glm::vec2 &p, float &mind, float &maxd)
+{
+	float d = glm::dot(axis, p);
+	mind = d < mind ? d : mind;
+	maxd = d > maxd ? d : maxd;
+}
+
+__host__ __device__ static
+bool triAABBIntersect(const AABB &box, const glm::vec3 tri[3])
+{
+	glm::vec2 c((box.max.x + box.min.x) * .5f, (box.max.y + box.min.y) * .5f);
+	float hx = (box.max.x - box.min.x) * .5f;
+	float hy = (box.max.y - box.min.y) * .5f;
+	glm::vec2 b0(-hx, -hy);
+	glm::vec2 b1(hx, -hy);
+	glm::vec2 b2(hx, hy);
+	glm::vec2 b3(-hx, hy);
+	glm::vec2 v0 = glm::vec2(tri[0]) - c;
+	glm::vec2 v1 = glm::vec2(tri[1]) - c;
+	glm::vec2 v2 = glm::vec2(tri[2]) - c;
+	glm::vec2 e0 = v1 - v0;
+	glm::vec2 e1 = v2 - v1;
+	glm::vec2 e2 = v0 - v2;
+	glm::vec2 axes[5] =
+	{
+		{ 1.f, 0.f },
+		{ 0.f, 1.f },
+		{ -e0.y, e0.x },
+		{ -e1.y, e1.x },
+		{ -e2.y, e2.x },
+	};
+
+	for (int i = 0; i < 5; ++i)
+	{
+		float boxMin = FLT_MAX, boxMax = -FLT_MAX;
+		float triMin = FLT_MAX, triMax = -FLT_MAX;
+
+		// project box onto the axis
+		projectPointOntoAxis(axes[i], b0, boxMin, boxMax);
+		projectPointOntoAxis(axes[i], b1, boxMin, boxMax);
+		projectPointOntoAxis(axes[i], b2, boxMin, boxMax);
+		projectPointOntoAxis(axes[i], b3, boxMin, boxMax);
+
+		// project triangle onto the axis
+		projectPointOntoAxis(axes[i], v0, triMin, triMax);
+		projectPointOntoAxis(axes[i], v1, triMin, triMax);
+		projectPointOntoAxis(axes[i], v2, triMin, triMax);
+
+		bool noOverlap = triMin > boxMax || triMax < boxMin;
+		if (noOverlap) // a separation axis has been found == no intersection
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+__host__ __device__ bool isFrontFacing(const glm::vec3 tri[3], bool ccwIsFront = true)
+{
+	float z = (tri[1].x - tri[0].x) * (tri[2].y - tri[0].y) - (tri[1].y - tri[0].y) * (tri[2].x - tri[0].x);
+	if (ccwIsFront)
+	{
+		return z > 0.f;
+	}
+	else
+	{
+		return z < 0.f;
+	}
+}

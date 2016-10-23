@@ -62,21 +62,39 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void mainLoop() {
-    while (!glfwWindowShouldClose(window)) {
+void mainLoop()
+{
+	float runCudaTimeMs;
+	float accumRunCudaTimeMs = 0.f;
+	float averageRunCudaTimeMs;
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
+		cudaEventRecord(start);
         runCuda();
+		cudaEventRecord(stop);
+		cudaEventSynchronize(stop);
+		cudaEventElapsedTime(&runCudaTimeMs, start, stop);
+		accumRunCudaTimeMs += runCudaTimeMs;
 
         time_t seconds2 = time (NULL);
 
-        if (seconds2 - seconds >= 1) {
+        if (seconds2 - seconds >= 1)
+		{
+			averageRunCudaTimeMs = accumRunCudaTimeMs / fpstracker;
+			accumRunCudaTimeMs = 0.f;
 
             fps = fpstracker / (seconds2 - seconds);
             fpstracker = 0;
             seconds = seconds2;
         }
 
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
+        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS | " +
+			utilityCore::convertFloatToString(averageRunCudaTimeMs) + " ms";
         glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
@@ -103,16 +121,16 @@ void runCuda() {
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
     dptr = NULL;
 
-	glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
-		scale * ((float)width / (float)height),
-		-scale, scale, 1.0, 1000.0);
+	glm::mat4 P = glm::perspective(45.f, (float)width / (float)height, .1f, 100.f);
 
 	glm::mat4 V = glm::mat4(1.0f);
 
 	glm::mat4 M =
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
 		* glm::rotate(x_angle, glm::vec3(1.0f, 0.0f, 0.0f))
-		* glm::rotate(y_angle, glm::vec3(0.0f, 1.0f, 0.0f));
+		* glm::rotate(y_angle, glm::vec3(0.0f, 1.0f, 0.0f))
+		* glm::scale(glm::vec3(1.f, 1.f, 1.f));
+		//* glm::scale(glm::vec3(.01f, .01f, .01f));
 
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
@@ -394,6 +412,6 @@ void mouseMotionCallback(GLFWwindow* window, double xpos, double ypos)
 
 void mouseWheelCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
-	const double s = 1.0;	// sensitivity
+	const double s = 0.5;	// sensitivity
 	z_trans += (float)(s * yoffset);
 }
