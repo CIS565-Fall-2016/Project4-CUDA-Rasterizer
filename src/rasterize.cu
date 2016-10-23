@@ -61,7 +61,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	if (x < w && y < h  ) {
 		Fragment & curFrag = fragmentBuffer[index];
 		framebuffer[index] = fragmentBuffer[index].color;
-#ifdef USELIGHT		
+#if USELIGHT==1		
 		framebuffer[index] *= glm::dot(light, fragmentBuffer[index].eyeNor);
 #endif		
 	}
@@ -737,7 +737,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer);
 	checkCUDAError("rasterize wrong");
 
-#ifdef USETEXTURE
+#if USETEXTURE==1
 	kernTextureMap << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
 	checkCUDAError("textur error");
 #endif
