@@ -83,9 +83,9 @@ glm::vec3 calculateBarycentricCoordinate(const glm::vec3 tri[3], glm::vec2 point
  */
 __host__ __device__ static
 bool isBarycentricCoordInBounds(const glm::vec3 barycentricCoord) {
-    return barycentricCoord.x >= 0.0 && barycentricCoord.x <= 1.0 &&
-           barycentricCoord.y >= 0.0 && barycentricCoord.y <= 1.0 &&
-           barycentricCoord.z >= 0.0 && barycentricCoord.z <= 1.0;
+    return barycentricCoord.x >= 0.f && barycentricCoord.x <= 1.f &&
+           barycentricCoord.y >= 0.f && barycentricCoord.y <= 1.f &&
+           barycentricCoord.z >= 0.f && barycentricCoord.z <= 1.f;
 }
 
 // CHECKITOUT
@@ -95,7 +95,18 @@ bool isBarycentricCoordInBounds(const glm::vec3 barycentricCoord) {
  */
 __host__ __device__ static
 float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3]) {
-    return -(barycentricCoord.x * tri[0].z
+    return barycentricCoord.x * tri[0].z
            + barycentricCoord.y * tri[1].z
-           + barycentricCoord.z * tri[2].z);
+           + barycentricCoord.z * tri[2].z;
 }
+
+/**
+ * For a given barycentric coordinate, compute the corresponding color
+ * on the triangle.
+ */
+ __host__ __device__ static
+ glm::vec3 getColorAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 color[3]) {
+	 return barycentricCoord.x * color[0]
+	 		+ barycentricCoord.y * color[1]
+			+ barycentricCoord.z * color[2];
+ }

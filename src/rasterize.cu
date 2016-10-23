@@ -625,22 +625,17 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 __global__
 void _vertexTransformAndAssembly(
-	int numVertices,
-	PrimitiveDevBufPointers primitive,
-	glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal,
-	int width, int height) {
-
+		int numVertices, PrimitiveDevBufPointers primitive, glm::mat4 MVP,
+		glm::mat4 MV, glm::mat3 MV_normal, int width, int height) {
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid >= numVertices) {
 		return;
 	}
 
+	VertexOut &out = primitive.dev_verticesOut[vid];
 	const glm::vec3 &pos = primitive.dev_position[vid];
 	const glm::vec3 &nor = primitive.dev_normal[vid];
-	const glm::vec2 &texcoord0 = primitive.dev_texcoord0[vid];
-	TextureData *diffuseTex = primitive.dev_diffuseTex;
-	VertexOut &out = primitive.dev_verticesOut[vid];
 
 	// TODO: Apply vertex transformation here
 	// Multiply the MVP matrix for each vertex position, this will transform
@@ -649,15 +644,21 @@ void _vertexTransformAndAssembly(
 	// Finally transform x and y to viewport space
 	out.pos = MVP * glm::vec4(pos, 1.f);
 	out.pos /= out.pos.w;
-	out.pos.x = (out.pos.x * .5f + .5f) * width;
-	out.pos.y = (out.pos.y * .5f + .5f) * height;
+	out.pos.x = (1.f - out.pos.x) * .5f * width;
+	out.pos.y = (1.f - out.pos.y) * .5f * height;
 
 	// TODO: Apply vertex assembly here
 	// Assemble all attribute arraies into the primitive array
-	out.eyePos = glm::vec3(MV * glm::vec4(pos, 1.f));
-	out.eyeNor = MV_normal * nor;
-	out.texcoord0 = texcoord0;
-	out.dev_diffuseTex = diffuseTex;
+	out.eyePos = multiplyMV(MV, glm::vec4(pos, 1.f));
+	out.eyeNor = glm::normalize(MV_normal * nor);
+
+	// texcoord
+	if (primitive.dev_texcoord0 != NULL) {
+		out.texcoord0 = primitive.dev_texcoord0[vid];
+	}
+
+	// diffuse texture data
+	out.dev_diffuseTex = primitive.dev_diffuseTex;
 }
 
 
@@ -667,29 +668,99 @@ static int curPrimitiveBeginId = 0;
 __global__
 void _primitiveAssembly(int numIndices, int curPrimitiveBeginId,
 			Primitive* dev_primitives, PrimitiveDevBufPointers primitive) {
-
 	// index id
 	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
 
-	if (iid < numIndices) {
-
-		// TODO: uncomment the following code for a start
-		// This is primitive assembly for triangles
-
-		int pid;	// id for cur primitives vector
-		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-			pid = iid / (int)primitive.primitiveType;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-					= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		}
-
-
-		// TODO: other primitive types (point, line)
+	if (iid >= numIndices) {
+		return;
 	}
 
+	// TODO: uncomment the following code for a start
+	// This is primitive assembly for triangles
+	int pid;	// id for cur primitives vector
+	if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+		pid = iid / (int)primitive.primitiveType;
+		dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		dev_primitives[pid + curPrimitiveBeginId].primitiveType = Triangle;
+	} else if (primitive.primitiveMode == Line) {
+		// TODO: other primitive types (line)
+
+	} else if (primitive.primitiveMode == Point) {
+		// TODO: other primitive types (point)
+
+	}
 }
 
+__global__
+void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
+		Fragment *dev_fragmentBuffer, int *dev_depth, int width, int height) {
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
+	if (idx >= totalNumPrimitives) {
+		return;
+	}
+
+	const Primitive &primitive = dev_primitives[idx];
+
+	if (primitive.primitiveType == Triangle) {
+		const glm::vec3 tri[3] = {
+			glm::vec3(primitive.v[0].pos),
+			glm::vec3(primitive.v[1].pos),
+			glm::vec3(primitive.v[2].pos),
+		};
+
+		if (calculateSignedArea(tri) >= 0.f) {
+			// back facing triangle
+			return;
+		}
+
+		const AABB aabb = getAABBForTriangle(tri);
+		const int left = max(0, (int)aabb.min.x - 1);
+		const int right = min(width, (int)aabb.max.x + 1);
+		const int bottom = max(0, (int)aabb.min.y - 1);
+		const int top = min(height, (int)aabb.max.y + 1);
+
+		if (left >= right || bottom >= top) {
+			// outsides screen
+			return;
+		}
+
+		for (int i = left; i < right; ++i) {
+			for (int j = bottom; j < top; ++j) {
+				int pixelId = i + j * width;
+				glm::vec2 p(i + .5f, j + .5f);
+				glm::vec3 baryCoord = calculateBarycentricCoordinate(tri, p);
+
+				if (!isBarycentricCoordInBounds(baryCoord)) {
+					// outsides triangle
+					continue;
+				}
+
+				float z = getZAtCoordinate(baryCoord, tri);
+
+				if (z < 0.f || z > 1.f) {
+					// too far or too near
+					continue;
+				}
+
+				int depth = (int)(z * INT_MAX);
+
+				if (depth > dev_depth[pixelId]) {
+					// occluded
+					continue;
+				}
+
+				dev_depth[pixelId] = depth;
+				dev_fragmentBuffer[pixelId].color = 1.f - glm::vec3(z, z, z);
+			}
+		}
+	} else if (primitive.primitiveType == Line){
+		
+	} else if (primitive.primitiveType == Point) {
+
+	}
+}
 
 /**
  * Perform rasterization.
@@ -737,17 +808,25 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
 	}
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	initDepth<<<blockCount2d, blockSize2d>>>(width, height, dev_depth);
 
 	// TODO: rasterize
+	dim3 numThreadsPerBlock(128);
+	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1)
+			/ numThreadsPerBlock.x);
 
-
+	_rasterizePrimitive<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
+			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
+			width, height);
+	checkCUDAError("rasterize primitive");
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+	render<<<blockCount2d, blockSize2d>>>(width, height, dev_fragmentBuffer,
+			dev_framebuffer);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height,
+			dev_framebuffer);
     checkCUDAError("copy render result to pbo");
 }
 
