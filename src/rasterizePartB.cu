@@ -1,0 +1,12 @@
+#include <cmath>
+#include <cstdio>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <thrust/random.h>
+#include <util/checkCUDAError.h>
+#include <util/tiny_gltf_loader.h>
+#include "rasterizeTools.h"
+#include "rasterize.h"
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include "common.h"

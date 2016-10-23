@@ -8,116 +8,9 @@
 
 //Xiang is here
 
-#include <cmath>
-#include <cstdio>
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <thrust/random.h>
-#include <util/checkCUDAError.h>
-#include <util/tiny_gltf_loader.h>
-#include "rasterizeTools.h"
 #include "rasterize.h"
-#include <glm/gtc/quaternion.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
-namespace {
-
-	typedef unsigned short VertexIndex;
-	typedef glm::vec3 VertexAttributePosition;
-	typedef glm::vec3 VertexAttributeNormal;
-	typedef glm::vec2 VertexAttributeTexcoord;
-	typedef unsigned char TextureData;
-
-	typedef unsigned char BufferByte;
-
-	enum PrimitiveType{
-		Point = 1,
-		Line = 2,
-		Triangle = 3
-	};
-
-	struct VertexOut {
-		glm::vec4 pos;
-
-		// TODO: add new attributes to your VertexOut
-		// The attributes listed below might be useful, 
-		// but always feel free to modify on your own
-
-		glm::vec3 eyePos;	// eye space position used for shading
-		glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		// glm::vec3 col;
-		glm::vec2 texcoord0;
-		TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
-		// ...
-	};
-
-	struct Primitive {
-		PrimitiveType primitiveType = Triangle;	// C++ 11 init
-		VertexOut v[3];
-
-		TextureData* dev_diffuseTex;
-		int texWidth, texHeight;
-	};
-
-	struct Fragment {
-		glm::vec3 color;
-
-		// TODO: add new attributes to your Fragment
-		// The attributes listed below might be useful, 
-		// but always feel free to modify on your own
-
-		glm::vec3 eyePos;	// eye space position used for shading
-		glm::vec3 eyeNor;
-		VertexAttributeTexcoord texcoord0;
-		TextureData* dev_diffuseTex;
-		int texWidth, texHeight;
-		// ...
-	};
-
-	struct PrimitiveDevBufPointers {
-		int primitiveMode;	//from tinygltfloader macro
-		PrimitiveType primitiveType;
-		int numPrimitives;
-		int numIndices;
-		int numVertices;
-
-		// Vertex In, const after loaded
-		VertexIndex* dev_indices;
-		VertexAttributePosition* dev_position;
-		VertexAttributeNormal* dev_normal;
-		VertexAttributeTexcoord* dev_texcoord0;
-
-		// Materials, add more attributes when needed
-		TextureData* dev_diffuseTex;
-		int diffuseTexWidth;
-		int diffuseTexHeight;
-		// TextureData* dev_specularTex;
-		// TextureData* dev_normalTex;
-		// ...
-
-		// Vertex Out, vertex used for rasterization, this is changing every frame
-		VertexOut* dev_verticesOut;
-
-		// TODO: add more attributes when needed
-		int texWidth, texHeight;
-	};
-
-}
-
-static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
-
-
-static int width = 0;
-static int height = 0;
-
-static int totalNumPrimitives = 0;
-static Primitive *dev_primitives = NULL;
-static Fragment *dev_fragmentBuffer = NULL;
-static glm::vec3 *dev_framebuffer = NULL;
-
-static int * dev_depth = NULL;	// you might need this buffer when doing depth test
-#define blockSize 128
+#include "common.h"
+ 
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -155,13 +48,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	int index = x + (y * w);
 
-	//  if (x < w && y < h) {
-	//      framebuffer[index] = fragmentBuffer[index].color;
-
-	//// TODO: add your fragment shader code here
-	//
-
-	//  }
+ 
 	glm::vec3 rgb;
 	glm::vec3 light = glm::normalize(glm::vec3(1, 2, 3));
 	int texwidth = fragmentBuffer[index].texWidth;
@@ -171,19 +58,19 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	if (x < w && y < h && x > 0 && y > 0) {
 		framebuffer[index] = fragmentBuffer[index].color;
 		// TODO: add your fragment shader code here
-		if (fragmentBuffer[index].dev_diffuseTex != NULL){
-			TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
-			int xtex = fragmentBuffer[index].texcoord0.x*texwidth;
-			int ytex = fragmentBuffer[index].texcoord0.y*texheight;
-			int idx = (xtex + ytex*texheight) * 3;
-			rgb = getRGB(tex, idx);
-			framebuffer[index] = rgb*glm::dot(light, fragmentBuffer[index].eyeNor);
-		}
-		else{
-			framebuffer[index] = fragmentBuffer[index].eyeNor;
+		//if (fragmentBuffer[index].dev_diffuseTex != NULL){
+		//	TextureData* tex = fragmentBuffer[index].dev_diffuseTex;
+		//	int xtex = fragmentBuffer[index].texcoord0.x*texwidth;
+		//	int ytex = fragmentBuffer[index].texcoord0.y*texheight;
+		//	int idx = (xtex + ytex*texheight) * 3;
+		//	rgb = getRGB(tex, idx);
+		//	framebuffer[index] = rgb*glm::dot(light, fragmentBuffer[index].eyeNor);
+		//}
+		//else{
+		//	framebuffer[index] = fragmentBuffer[index].eyeNor;
 
-		}
-
+		//}
+		framebuffer[index] *= glm::dot(light,fragmentBuffer[index].eyeNor);
 	}
 }
 
@@ -707,14 +594,6 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
-
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
-
 		int pid;// id for cur primitives vector
 		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {//simply copy the attributes for now
 			pid = iid / (int)primitive.primitiveType;
@@ -722,6 +601,8 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].texHeight = primitive.texHeight;
 			dev_primitives[pid + curPrimitiveBeginId].texWidth = primitive.texWidth;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 0.0, 0.0);
+			//currently default color is red for all
 		}
 		// TODO: other primitive types (point, line)
 	}
@@ -739,38 +620,38 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 	if (index < n){
 		Primitive & curPrim = primitives[index];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
+			glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
+			AABB aabb = getAABBForTriangle(triangle);
+			//brute force baricentric 
+			int xmin = aabb.min.x;
+			int xmax = aabb.max.x;
+			int ymin = aabb.min.y;
+			int ymax = aabb.max.y;
 
-		glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
-		AABB aabb = getAABBForTriangle(triangle);
-		//brute force baricentric 
-		int xmin = aabb.min.x;
-		int xmax = aabb.max.x;
-		int ymin = aabb.min.y;
-		int ymax = aabb.max.y;
+			int fixedDepth;
+			for (int x = xmin; x < xmax; x++){
+				for (int y = ymin; y < ymax; y++){
+					int pid = x + y*width;
+					glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+					if (isBarycentricCoordInBounds(barcen)){
+						float zval = getZAtCoordinate(barcen, triangle);
+						fixedDepth = -(int)INT_MAX*zval;
+						atomicMin(&depths[pid], fixedDepth);
+						if (depths[pid] == fixedDepth){
+							Fragment & curFrag = fragments[pid];
+							curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
+							curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
+							curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
+							curFrag.dev_diffuseTex = curPrim.dev_diffuseTex;
+							curFrag.texHeight = curPrim.texHeight;
+							curFrag.texWidth = curPrim.texWidth;
 
-		int fixedDepth;
-		for (int x = xmin; x < xmax; x++){
-			for (int y = ymin; y < ymax; y++){
-				int pid = x + y*width;
-				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
-				if (isBarycentricCoordInBounds(barcen)){
-					float zval = getZAtCoordinate(barcen, triangle);
-					fixedDepth = -(int)INT_MAX*zval;
-					atomicMin(&depths[pid], fixedDepth);
-					if (depths[pid] == fixedDepth){
-						Fragment & curFrag = fragments[pid];
-						curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
-						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
-						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
-						curFrag.dev_diffuseTex = curPrim.dev_diffuseTex;
-						curFrag.texHeight = curPrim.texHeight;
-						curFrag.texWidth = curPrim.texWidth;
-
+							curFrag.color = barcen.x*curPrim.v[0].col + barcen.y*curPrim.v[1].col + barcen.z*curPrim.v[2].col;
+							
+						}
 					}
 				}
 			}
-		}
-
 		//}
 	}
 }
