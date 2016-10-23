@@ -21,9 +21,16 @@ list(APPEND CMAKE_LIBRARY_PATH "${EXTERNAL_LIB_PATH}")
 
 # Find up and set up core dependency libs
 
-set(GLFW_INCLUDE_DIR "external/include")
-set(GLFW_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
-find_library(GLFW_LIBRARY "glfw3" HINTS "${GLFW_LIBRARY_DIR}")
+# Configure GLFW
+set(GLFW_ROOT_DIR "external/glfw-3.2.1")
+# We don't need documents, tests, etc..
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(${GLFW_ROOT_DIR})
+include_directories("${GLFW_ROOT_DIR}/include")
+SET(GLFW_LIBRARY glfw)
 
 set(GLEW_INCLUDE_DIR "external/include")
 set(GLEW_LIBRARY_DIR "${EXTERNAL_LIB_PATH}")
