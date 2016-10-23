@@ -19,8 +19,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 
-#define TILE_SIZE 16
-#define TILE_TRI_LIST_SCALE 0.5f
+#define TILE_SIZE 8
+#define TILE_TRI_LIST_SCALE 0.1f
 #define TRI_LIST_SCALE_THRESHOLD 100
 
 #define ROUND_UP_DIV(x, n) (((x) + (n) - 1) / (n))
@@ -801,6 +801,12 @@ __global__ void _rasterize(int numPrims, int width, int height, const Primitive 
 			glm::vec3(prim.v[1].pos),
 			glm::vec3(prim.v[2].pos)
 		};
+
+		if (!isFrontFacing(tri))
+		{
+			return;
+		}
+
 		AABB bbox = getAABBForTriangle(tri);
 
 		int xmin = glm::min(width - 1, glm::max(0, static_cast<int>(bbox.min.x)));
@@ -1022,13 +1028,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
 
-	//cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	//initDepth<<<blockCount2d, blockSize2d>>>(width, height, dev_depth);
-	
+	// TODO: rasterize
 	int numTiles = numTilesX * numTilesY;
 	cudaMemset(dev_primCounts, 0, numTiles * sizeof(int));
 
-	// TODO: rasterize
 	const int blockSize1d = 128;
 	int numBlocks = (totalNumPrimitives + blockSize1d - 1) / blockSize1d;
 	fillTileTriLists<<<numBlocks, blockSize1d>>>(totalNumPrimitives, numTilesX, numTilesY, triListSize, dev_primitives, dev_primCounts, dev_tileTriLists);
@@ -1039,6 +1042,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	tileBasedRasterize<<<numBlocks3, blockSize3>>>(totalNumPrimitives, width, height, numTilesX, numTilesY, triListSize, dev_primitives, dev_primCounts, dev_tileTriLists, dev_depth, dev_fragmentBuffer);
 	checkCUDAError("tileBasedRasterize");
 
+	//cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+	//initDepth<<<blockCount2d, blockSize2d>>>(width, height, dev_depth);
 	//_rasterize<<<numBlocks, blockSize1d>>>(totalNumPrimitives, width, height, dev_primitives, dev_depth, dev_fragmentBuffer);
 
     // Copy depthbuffer colors into framebuffer
