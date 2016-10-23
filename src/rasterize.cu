@@ -85,6 +85,8 @@ namespace {
 
 		// Materials, add more attributes when needed
 		TextureData* dev_diffuseTex;
+		int diffuseTexWidth;
+		int diffuseTexHeight;
 		// TextureData* dev_specularTex;
 		// TextureData* dev_normalTex;
 		// ...
@@ -375,10 +377,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						return;
 
 					// TODO: add new attributes for your PrimitiveDevBufPointers when you add new attributes
-					VertexIndex* dev_indices;
-					VertexAttributePosition* dev_position;
-					VertexAttributeNormal* dev_normal;
-					VertexAttributeTexcoord* dev_texcoord0;
+					VertexIndex* dev_indices = NULL;
+					VertexAttributePosition* dev_position = NULL;
+					VertexAttributeNormal* dev_normal = NULL;
+					VertexAttributeTexcoord* dev_texcoord0 = NULL;
 
 					// ----------Indices-------------
 
@@ -521,6 +523,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					// You can only worry about this part once you started to 
 					// implement textures for your rasterizer
 					TextureData* dev_diffuseTex = NULL;
+					int diffuseTexWidth = 0;
+					int diffuseTexHeight = 0;
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -536,9 +540,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 									cudaMalloc(&dev_diffuseTex, s);
 									cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
 									
-									// TODO: store the image size to your PrimitiveDevBufPointers
-									// image.width;
-									// image.height;
+									diffuseTexWidth = image.width;
+									diffuseTexHeight = image.height;
 
 									checkCUDAError("Set Texture Image data");
 								}
@@ -579,6 +582,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						dev_texcoord0,
 
 						dev_diffuseTex,
+						diffuseTexWidth,
+						diffuseTexHeight,
 
 						dev_vertexOut	//VertexOut
 					});
