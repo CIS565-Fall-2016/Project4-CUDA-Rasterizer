@@ -17,6 +17,7 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/component_wise.hpp>
 
 #define IDx ((blockIdx.x * blockDim.x) + threadIdx.x)
 #define IDy ((blockIdx.y * blockDim.y) + threadIdx.y)
@@ -51,8 +52,8 @@ namespace {
     // The attributes listed below might be useful, 
     // but always feel free to modify on your own
 
-     glm::vec3 eyePos;  // eye space position used for shading
-     glm::vec3 eyeNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
+     glm::vec3 viewPos;  // eye space position used for shading
+     glm::vec3 viewNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
     // glm::vec3 col;
   };
 
@@ -88,7 +89,7 @@ namespace {
 
     // Vertex, const after loaded
     VertexIndex* dev_indices;
-    VertexAttributePosition* dev_position;
+    VertexAttributePosition* dev_pos;
     VertexAttributeNormal* dev_normal;
     VertexAttributeTexcoord* dev_texcoord0;
 
@@ -640,15 +641,15 @@ void _vertexTransformAndAssembly(
   // Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
   // Then divide the pos by its w element to transform into NDC space
   // Finally transform x and y to viewport space
-  glm::vec4 modelPos = glm::vec4(vertexParts.dev_position[vid], 1.0); // this is in model space
-  vertex.pos = (float)width / 2.0f * (modelPos / modelPos.w + 1.0f);
-  // TODO go over this carefully
-
   // TODO: Apply vertex transformation here
+  glm::vec4 modelPos = glm::vec4(vertexParts.dev_pos[vid], 1); // this is in model space
+  vertex.viewPos = glm::vec3(MV * modelPos);
+  vertex.viewNor = glm::vec3(MV_normal * vertexParts.dev_normal[vid]);
+  glm::vec4 clipPos(MVP * modelPos);
+  glm::vec4 screenDims(width, height, 1, 1);
+  vertex.pos = screenDims * (clipPos + glm::vec4(1, 1, 0, 0)) / clipPos.w; // HELP: what is the fourth dimension for?
 
   // Assemble all attribute arrays into the primitive array
-  //vertex.eyePos = vertexParts.dev_normal[vid];
-  //vertex.eyeNor = vertexParts.dev_normal[vid];
   //vertex.texcoord0 = vertexParts.dev_texcoord0[vid];
   //vertex.dev_diffuseTex = vertexParts.dev_diffuseTex;
 }
@@ -856,7 +857,7 @@ void rasterizeFree() {
   for (; it != itEnd; ++it) {
     for (auto p = it->second.begin(); p != it->second.end(); ++p) {
       cudaFree(p->dev_indices);
-      cudaFree(p->dev_position);
+      cudaFree(p->dev_pos);
       cudaFree(p->dev_normal);
       cudaFree(p->dev_texcoord0);
       cudaFree(p->dev_diffuseTex);
