@@ -99,15 +99,20 @@ void mainLoop() {
 /**
  * parameters for cow.gltf
  */
-//float scale = 0.1f;
-//float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
-//float x_angle = 0.0f, y_angle = - 30.0f / 180.0f * PI;
-//float fov = 65.0f;
-
+#if 0
+float scale = 0.1f;
+float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
+float x_angle = 0.0f, y_angle = -30.0f / 180.0f * PI;
+float fov = 65.0f;
+#else
 float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
 float x_angle = 0.0f, y_angle = -30.0f / 180.0f * PI;
 float fov = 65.0f;
+#endif
+
+
+
 
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU

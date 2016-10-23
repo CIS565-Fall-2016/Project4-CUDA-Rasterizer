@@ -20,6 +20,9 @@
 
 #define BILINEAR_INTERP 1
 #define PERSPECTIVE_CORRECT 1
+#define BLINN_PHONG_SHADING 1 
+
+#define DiffuseColor glm::vec3(0.1, 0.1, 0.1)
 
 namespace {
 
@@ -824,7 +827,7 @@ void _rasterizationSolidMode(
 
 #endif
 
-					dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3); // black
+					dev_fragmentBuffer[pixelIdx].color = DiffuseColor; // black
 					dev_fragmentBuffer[pixelIdx].dev_diffuseTex = primitive.dev_diffuseTex;
 					dev_fragmentBuffer[pixelIdx].diffuseTexWidth = primitive.diffuseTexWidth;
 					dev_fragmentBuffer[pixelIdx].diffuseTexHeight = primitive.diffuseTexHeight;
@@ -869,7 +872,7 @@ void _rasterizationPointMode(
 
 			if (dev_depth[pixelIdx] == depth)
 			{
-				dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+				dev_fragmentBuffer[pixelIdx].color = DiffuseColor;
 				dev_fragmentBuffer[pixelIdx].eyePos = primitive.v[i].eyePos;
 				dev_fragmentBuffer[pixelIdx].eyeNor = primitive.v[i].eyeNor;
 				dev_fragmentBuffer[pixelIdx].texcoord0 = primitive.v[i].texcoord0;
@@ -932,7 +935,7 @@ void _rasterizationWireframeMode(
 
 					if (dev_depth[pixelIdx] == depth)
 					{
-						dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+						dev_fragmentBuffer[pixelIdx].color = DiffuseColor;
 						dev_fragmentBuffer[pixelIdx].eyePos = (1 - ratio) * startPoint.eyePos + ratio * endPoint.eyePos;
 						dev_fragmentBuffer[pixelIdx].eyeNor = (1 - ratio) * startPoint.eyeNor + ratio * endPoint.eyeNor;
 						dev_fragmentBuffer[pixelIdx].texcoord0 = (1 - ratio) * startPoint.texcoord0 + ratio * endPoint.texcoord0;
@@ -967,7 +970,7 @@ void _rasterizationWireframeMode(
 
 					if (dev_depth[pixelIdx] == depth)
 					{
-						dev_fragmentBuffer[pixelIdx].color = glm::vec3(0.3, 0.3, 0.3);
+						dev_fragmentBuffer[pixelIdx].color = DiffuseColor;
 						dev_fragmentBuffer[pixelIdx].eyePos = (1 - ratio) * startPoint.eyePos + ratio * endPoint.eyePos;
 						dev_fragmentBuffer[pixelIdx].eyeNor = (1 - ratio) * startPoint.eyeNor + ratio * endPoint.eyeNor;
 						dev_fragmentBuffer[pixelIdx].texcoord0 = (1 - ratio) * startPoint.texcoord0 + ratio * endPoint.texcoord0;
@@ -1008,7 +1011,7 @@ glm::vec3 getTextureColor(
 	}
 	else
 	{
-		return glm::vec3(0.3, 0.3, 0.3);
+		return glm::vec3(0, 0, 0);
 	}
 }
 
@@ -1024,79 +1027,111 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int index = x + (y * w);
 
 	if (x < w && y < h) {
-		
+
 		//framebuffer[index] = fragmentBuffer[index].eyeNor;
 
 		// TODO: add your fragment shader code here
+		Fragment & frag = fragmentBuffer[index];
 
 #if BILINEAR_INTERP == 1
-		Fragment & frag = fragmentBuffer[index];
+
 
 		if (frag.dev_diffuseTex == NULL)
 		{
-			framebuffer[index] = frag.eyeNor;
-			return;
-		}
-
-		float fx = frag.texcoord0.x * frag.diffuseTexWidth;
-		float fy = frag.texcoord0.y * frag.diffuseTexHeight;
-		int tx = glm::max(0, glm::min(int(fx), frag.diffuseTexWidth - 1));
-		int ty = glm::max(0, glm::min(int(fy), frag.diffuseTexHeight - 1));
-
-		float dx = fx - tx;
-		float dy = fy - ty;
-
-		glm::vec3 tex_x_y = getTextureColor(
-			frag.dev_diffuseTex,
-			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
-			tx, ty);
-		glm::vec3 tex_x_1_y = getTextureColor(
-			frag.dev_diffuseTex,
-			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
-			tx + 1, ty);
-		glm::vec3 tex_x_y_1 = getTextureColor(
-			frag.dev_diffuseTex,
-			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
-			tx, ty + 1);
-		glm::vec3 tex_x_1_y_1 = getTextureColor(
-			frag.dev_diffuseTex,
-			frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
-			tx  + 1, ty + 1);
-
-		framebuffer[index] = 
-			(tex_x_y * (1 - dx) + tex_x_1_y * dx ) * (1 - dy) + 
-			(tex_x_y_1 * (1 - dx) + tex_x_1_y_1 * dx ) * dy;
-
-#else
-
-		Fragment & frag = fragmentBuffer[index];
-
-		if (frag.dev_diffuseTex == NULL)
-		{
-			framebuffer[index] = frag.eyeNor;
-			return;
-		}
-
-		int tx = frag.texcoord0.x * frag.diffuseTexWidth; 
-		int ty = frag.texcoord0.y * frag.diffuseTexHeight;
-		int texPixelIdx = frag.diffuseTexStride * (tx + ty * frag.diffuseTexWidth);
-
-		TextureData * texture = frag.dev_diffuseTex;
-		if ( tx >= 0 && ty >=0 && tx < frag.diffuseTexWidth && ty < frag.diffuseTexHeight && texture != NULL)
-		{
-			framebuffer[index] = glm::vec3(
-				(float)texture[texPixelIdx + 0] / 255.0f,
-				(float)texture[texPixelIdx + 1] / 255.0f,
-				(float)texture[texPixelIdx + 2] / 255.0f );
+			framebuffer[index] = frag.color;
 		}
 		else
 		{
-			framebuffer[index] = glm::vec3(0.3, 0.3, 0.3);
+			float fx = frag.texcoord0.x * frag.diffuseTexWidth;
+			float fy = frag.texcoord0.y * frag.diffuseTexHeight;
+			int tx = glm::max(0, glm::min(int(fx), frag.diffuseTexWidth - 1));
+			int ty = glm::max(0, glm::min(int(fy), frag.diffuseTexHeight - 1));
+
+			float dx = fx - tx;
+			float dy = fy - ty;
+
+			glm::vec3 tex_x_y = getTextureColor(
+				frag.dev_diffuseTex,
+				frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+				tx, ty);
+			glm::vec3 tex_x_1_y = getTextureColor(
+				frag.dev_diffuseTex,
+				frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+				tx + 1, ty);
+			glm::vec3 tex_x_y_1 = getTextureColor(
+				frag.dev_diffuseTex,
+				frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+				tx, ty + 1);
+			glm::vec3 tex_x_1_y_1 = getTextureColor(
+				frag.dev_diffuseTex,
+				frag.diffuseTexWidth, frag.diffuseTexHeight, frag.diffuseTexStride,
+				tx + 1, ty + 1);
+
+			framebuffer[index] =
+				(tex_x_y * (1 - dx) + tex_x_1_y * dx) * (1 - dy) +
+				(tex_x_y_1 * (1 - dx) + tex_x_1_y_1 * dx) * dy;
+		}
+
+
+#else
+
+		if (frag.dev_diffuseTex == NULL)
+		{
+			framebuffer[index] = frag.color;
+		}
+		else
+		{
+			int tx = frag.texcoord0.x * frag.diffuseTexWidth; 
+			int ty = frag.texcoord0.y * frag.diffuseTexHeight;
+			int texPixelIdx = frag.diffuseTexStride * (tx + ty * frag.diffuseTexWidth);
+
+			TextureData * texture = frag.dev_diffuseTex;
+			if ( tx >= 0 && ty >=0 && tx < frag.diffuseTexWidth && ty < frag.diffuseTexHeight && texture != NULL)
+			{
+				framebuffer[index] = glm::vec3(
+					(float)texture[texPixelIdx + 0] / 255.0f,
+					(float)texture[texPixelIdx + 1] / 255.0f,
+					(float)texture[texPixelIdx + 2] / 255.0f );
+			}
+			else
+			{
+				framebuffer[index] = frag.color;
+			}
 		}
 
 #endif
 
+#if BLINN_PHONG_SHADING == 1
+		// lighting shading Blinn - Phong model
+		// reference: https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+		glm::vec3 lightDir = glm::normalize(glm::vec3(0, 1, 0) - frag.eyePos);
+		float lambert = glm::max(glm::dot(lightDir, frag.eyeNor), 0.0f);
+
+		float specular = 0.0f;
+
+		if (lambert > 0);
+		{
+			glm::vec3 viewDir = glm::normalize(-frag.eyePos);
+
+			glm::vec3 halfDir = glm::normalize(lightDir + viewDir);
+			float specAngle = glm::max(glm::dot(halfDir, frag.eyeNor), 0.0f);
+			specular = powf(specAngle, 24.0);
+		}
+
+		// ambient + lambert + specular
+		glm::vec3 color = 
+			//glm::vec3(0.1, 0.1, 0.1)	+	
+			lambert * framebuffer[index] +
+			specular * glm::vec3(1, 1, 1);		
+
+		color.x = powf(color.x, 1.0f / 2.2f);
+		color.y = powf(color.y, 1.0f / 2.2f);
+		color.z = powf(color.z, 1.0f / 2.2f);
+		framebuffer[index] = color;
 	}
+
+#endif
+
 }
 
 
