@@ -686,6 +686,38 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+__global__ void kernRasterizePrimitives(
+	int num_primitives
+	, const Primitive* primitives
+	, int width
+	, int height
+	, Fragment * frag_buffer
+	)
+{
+	// index id
+	auto pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	// copy primitive data to local memory
+	auto primitive = primitives[pid]; 
+
+	if (primitive.primitiveType == PrimitiveType::Triangle)
+	{
+		glm::vec2 aabb_min = { 
+			fminf(fminf(fminf( primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , 0)
+			, fminf(fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , 0)
+			//, fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2]) 
+		};
+		glm::vec2 aabb_max = {
+			fmaxf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , width)
+			, fmaxf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , height)
+			//, fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2])
+		};
+
+		// TODO: CUDA Dynamic Parallelism?
+		// TODO: the rest of things
+
+	}
+}
 
 
 /**
@@ -736,7 +768,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// TODO: rasterize
-
+	//kernRasterizePrimitives<<<something, something>>>(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer);
 
 
     // Copy depthbuffer colors into framebuffer
