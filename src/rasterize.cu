@@ -14,7 +14,7 @@
 #define USETEXTURE 1
 #define USELIGHT 1
 #define USEBILINFILTER 1
-#define USEPERSPECTIVECORRECTION 0
+#define USEPERSPECTIVECORRECTION 1
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -681,23 +681,25 @@ __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
-	if (index < n && n>10){
+	if (index < n && n>50){ //   (n too small) this is the crazy bug!!
 		Primitive & curPrim = primitives[index];
 		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
 		glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
 		AABB aabb = getAABBForTriangle(triangle);
 		//brute force baricentric 
+		if (aabb.min.x<0 || aabb.max.x>width - 1 || aabb.min.y<0 || aabb.max.y>height - 1) return;
 		int xmin = getMax(0,aabb.min.x);
 		int xmax = getMin(aabb.max.x, width-1);
 		int ymin = getMax(0,aabb.min.y);
 		int ymax = getMin(aabb.max.y,height-1);
-
+		
 		
 		int fixedDepth;
 		for (int x = xmin; x <= xmax; x++){
 			for (int y = ymin; y <= ymax; y++){ 
 				int pid = x + y*width;
+				//printf("pid %d\n", pid);
 				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y)); 
 				if (isBarycentricCoordInBounds(barcen)){
 					float zval = getZAtCoordinate(barcen, triangle);
@@ -781,8 +783,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 
-	// TODO: rasterize
-
+	// TODO: rasterize 
 	dim3 numBlocksPrims((totalNumPrimitives + blockSize - 1) / blockSize);
 	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer);
 	checkCUDAError("rasterize wrong");

@@ -104,5 +104,5 @@ static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
-#define blockSize 128
+#define blockSize 256
 
