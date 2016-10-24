@@ -607,7 +607,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].texHeight = primitive.texHeight;
 			dev_primitives[pid + curPrimitiveBeginId].texWidth = primitive.texWidth;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 0.0, 0.0);
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 1.0, 1.0);
 			//currently default color is red for all
 		}
 		// TODO: other primitive types (point, line)
@@ -691,7 +691,6 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 						atomicMin(&depths[pid], fixedDepth);
 						if (depths[pid] == fixedDepth){
 							Fragment & curFrag = fragments[pid];
-							curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
 							curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
 							curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
 							//add texture here
@@ -701,7 +700,14 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 							curFrag.texture = vertex0.texture;
 							//add color here (in case no texture)
 							curFrag.color = barcen.x*curPrim.v[0].col + barcen.y*curPrim.v[1].col + barcen.z*curPrim.v[2].col;
-							
+#if USEPERSPECTIVECORRECTION==1 //https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness for reference
+							glm::vec3 tmp = glm::vec3(barcen.x / curPrim.v[0].eyePos.z, barcen.y / curPrim.v[1].eyePos.z, barcen.z / curPrim.v[2].eyePos.z);
+							curFrag.texcoord0 = tmp.x*curPrim.v[0].texcoord0 + tmp.y*curPrim.v[1].texcoord0 + tmp.z*curPrim.v[2].texcoord0;
+							curFrag.texcoord0 /=(tmp.x+tmp.y+tmp.z);
+#else
+							curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
+
+#endif
 						}
 					}
 				}
