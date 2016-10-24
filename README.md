@@ -30,7 +30,7 @@ Texture | Normal | Depth | Texcoord
 
 Lambert | Blinn
 --- | ---
- ![](img/cover_lambert.gif) |  ![](http://i.imgur.com/rdbwMci.jpg)
+ ![](img/cover_lambert.gif) |  ![](img/cover_lambert.gif)
 
 ### Credits
 
