@@ -56,9 +56,10 @@ CUDA Rasterizer
 
 * Perspective correctness
   * Since the Barycentric coordinates of triangles are calculated in screen space, we cannot use it to perform linear interpolation directly. The main reason is that perspective projection doesn't preserver distance (parallel lines will converge to a single point after perspective projection). Luckily, people have found out that doing linear interpolation on the reciprocals of vertex depths (in eye space) does give perspective correct results for depth. For other vertex attributes, we can linearly interpolate each attribute scaled by the reciprocal of corresponding depth value and multiply the result by the correctly interpolated depth. So this leads to the implementation of perspective correct interpolation of vertex attributes (the effect is obvious when you have large textured triangles).
+  
   | With Perspective Correction | Without Perspective Correction |
   | --- | --- |
-  | ![](renders/bilerp.png) | ![](renders/nn.png) |
+  | ![](renders/perspective_correct.png) | ![](renders/perspective_incorrect.png) |
 
 
 ### Credits
