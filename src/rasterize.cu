@@ -709,6 +709,11 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 			glm::vec3(primitive.v[1].pos),
 			glm::vec3(primitive.v[2].pos),
 		};
+		const glm::vec3 normal[3] = {
+			primitive.v[0].eyeNor,
+			primitive.v[1].eyeNor,
+			primitive.v[2].eyeNor
+		};
 
 		if (calculateSignedArea(tri) >= 0.f) {
 			// back facing triangle
@@ -752,11 +757,12 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				}
 
 				dev_depth[pixelId] = depth;
-				dev_fragmentBuffer[pixelId].color = 1.f - glm::vec3(z, z, z);
+				dev_fragmentBuffer[pixelId].color = getNormalAtCoordinate(baryCoord, normal);
+				// dev_fragmentBuffer[pixelId].color =
 			}
 		}
 	} else if (primitive.primitiveType == Line){
-		
+
 	} else if (primitive.primitiveType == Point) {
 
 	}
@@ -819,7 +825,6 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
 			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
 			width, height);
 	checkCUDAError("rasterize primitive");
-
     // Copy depthbuffer colors into framebuffer
 	render<<<blockCount2d, blockSize2d>>>(width, height, dev_fragmentBuffer,
 			dev_framebuffer);

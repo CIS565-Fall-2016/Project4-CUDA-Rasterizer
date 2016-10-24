@@ -110,3 +110,14 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 	 		+ barycentricCoord.y * color[1]
 			+ barycentricCoord.z * color[2];
  }
+
+ /**
+  * For a given barycentric coordinate, compute the corresponding normal
+  * on the triangle.
+  */
+  __host__ __device__ static
+  glm::vec3 getNormalAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 normal[3]) {
+ 	 return barycentricCoord.x * normal[0]
+ 	 		+ barycentricCoord.y * normal[1]
+ 			+ barycentricCoord.z * normal[2];
+  }
