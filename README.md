@@ -6,10 +6,34 @@ CUDA Rasterizer
 * Austin Eng
 * Tested on: Windows 10, i7-4770K @ 3.50GHz 16GB, GTX 780 3072MB (Personal Computer)
 
-### (TODO: Your README)
+<table class="image">
+	<tr>
+	<td><img src="renders/duck-diffuse-texture.png"/></td>
+	<td><img src="renders/uv_coords.png"/></td>
+	<td><img src="renders/texturing_wrong.png"/></td>
+	<td><img src="renders/fixed_textures.png"/></td>
+	</tr>
+	<tr>
+	<td>Diffuse color</td>
+	<td>Testing texture coordinates</td>
+	<td>Incorrect texture reading</td>
+	</tr>
+</table>
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
+## Perspective Correct Interpolation
+
+<img src="renders/perspective_incorrect.png" width="49%" />
+<img src="renders/perspective_correct.png" width="49%" />
+
+Incorrect interpolation that does not take perspective distortion into account results in distorted texture mapping. This is because the perspective projection is not linear with respect to depth. As a result, projected textures can appear skewed if not corrected.
+
+
+## Bilinear Texture Filtering
+
+![](renders/bilinear_breakdown.png)
+
+Interpolated texture coordinates are rarely ever exactly aligned with texels. Texture artifacts can occur when the interpolated texel jumps to an adjacent one. To avoid this problem, we grab the four pixels neighboring our interpolated texture coordinate and bilinearly interpolate between them. This results in a much smoother image.
+
 
 ## Analysis
 
@@ -22,7 +46,7 @@ project, and we will not be able to grade you without a good README.
 
 ![](profiling/constant_memory.png)
 
-Storing camera matrices made barely any improvement in kernel execution time even though it drastically reduced register usage and improved occupancy. This may be because the vertex transform kernel is already relatively fast, taking just 13 microseconds. More on this later, but this cost may be cheap enough that it's beneficial to do additional vertex transform computation if multiple types of vertex data are desired (requiring multiple reads).
+Storing camera matrices in constant memory made barely any improvement in kernel execution time even though it drastically reduced register usage and improved occupancy. This may be because the vertex transform kernel is already relatively fast, taking just 13 microseconds. More on this later, but this cost may be cheap enough that it's beneficial to do additional vertex transform computation if multiple types of vertex data are desired (requiring multiple reads).
 
 
 ### Bilinear Interpolation
