@@ -14,7 +14,7 @@
 #define USETEXTURE 1
 #define USELIGHT 1
 #define USEBILINFILTER 1
-#define USEPERSPECTIVECORRECTION 1
+#define USEPERSPECTIVECORRECTION 0
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -632,7 +632,14 @@ __device__ __host__ int getMax(int a, int b){
 		return b;
 	}
 }
-
+__device__ __host__ int getMin(int a, int b){
+	if (a < b){
+		return a;
+	}
+	else{
+		return b;
+	}
+}
 __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 	int idx = threadIdx.x + (blockIdx.x*blockDim.x);
 	int idy = threadIdx.y + (blockIdx.y*blockDim.y);
@@ -669,36 +676,46 @@ __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 	}
 
 }
+
+
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
-	if (index < n){
+	if (index < n && n>10){
 		Primitive & curPrim = primitives[index];
 		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
 		glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
 		AABB aabb = getAABBForTriangle(triangle);
 		//brute force baricentric 
-		int xmin = aabb.min.x;
-		int xmax = aabb.max.x;
-		int ymin = aabb.min.y;
-		int ymax = aabb.max.y;
+		int xmin = getMax(0,aabb.min.x);
+		int xmax = getMin(aabb.max.x, width-1);
+		int ymin = getMax(0,aabb.min.y);
+		int ymax = getMin(aabb.max.y,height-1);
 
+		
 		int fixedDepth;
 		for (int x = xmin; x <= xmax; x++){
-			for (int y = ymin; y <= ymax; y++){
+			for (int y = ymin; y <= ymax; y++){ 
 				int pid = x + y*width;
-				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y)); 
 				if (isBarycentricCoordInBounds(barcen)){
 					float zval = getZAtCoordinate(barcen, triangle);
+					 
 					fixedDepth = -(int)INT_MAX*zval;
-					atomicMin(&depths[pid], fixedDepth);
-					if (depths[pid] == fixedDepth){
+					atomicMin(&depths[pid], fixedDepth); 
+					if (depths[pid] == fixedDepth ){
+						
 						Fragment & curFrag = fragments[pid];
 						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
 						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
 						//add texture here
-						curFrag.dev_diffuseTex = vertex0.dev_diffuseTex;
+						if (vertex0.dev_diffuseTex == NULL){
+							curFrag.dev_diffuseTex = NULL;
+						}
+						else{
+							curFrag.dev_diffuseTex = vertex0.dev_diffuseTex;
+						}
 						curFrag.texHeight = vertex0.texHeight;
 						curFrag.texWidth = vertex0.texWidth;
 						curFrag.texture = vertex0.texture;

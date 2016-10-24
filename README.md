@@ -10,9 +10,9 @@ Milk truck | Duck
 :-------------------------:|:-------------------------: 
 ![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
 
-Cow | Milk
+Cow | Di
 :-------------------------:|:-------------------------: 
-![](imgs/cow1.gif) | ![](imgs/milk1.gif) 
+![](imgs/cow1.gif) | ![](imgs/di1.gif) 
 
 ### Credits
 
