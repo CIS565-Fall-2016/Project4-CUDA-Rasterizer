@@ -46,7 +46,9 @@ namespace {
 		// glm::vec3 col;
 		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
+		 int diffuseTexWidth;
+		 int diffuseTexHeight;
+		 int diffuseTexStride;
 		// ...
 	};
 
@@ -86,6 +88,7 @@ namespace {
 		TextureData* dev_diffuseTex;
 		int diffuseTexWidth;
 		int diffuseTexHeight;
+		int diffuseTexStride;
 		// TextureData* dev_specularTex;
 		// TextureData* dev_normalTex;
 		// ...
@@ -523,6 +526,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					TextureData* dev_diffuseTex = NULL;
 					int diffuseTexWidth = 0;
 					int diffuseTexHeight = 0;
+					int diffuseTexStride = 0;
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -540,6 +544,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 									diffuseTexWidth = image.width;
 									diffuseTexHeight = image.height;
+									diffuseTexStride = image.component;
 
 									checkCUDAError("Set Texture Image data");
 								}
@@ -582,6 +587,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						dev_diffuseTex,
 						diffuseTexWidth,
 						diffuseTexHeight,
+						diffuseTexStride,
 
 						dev_vertexOut	//VertexOut
 					});
@@ -659,6 +665,9 @@ void _vertexTransformAndAssembly(
 
 	// diffuse texture data
 	out.dev_diffuseTex = primitive.dev_diffuseTex;
+	out.diffuseTexWidth = primitive.diffuseTexWidth;
+	out.diffuseTexHeight = primitive.diffuseTexHeight;
+	out.diffuseTexStride = primitive.diffuseTexStride;
 }
 
 
@@ -678,6 +687,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId,
 	// TODO: uncomment the following code for a start
 	// This is primitive assembly for triangles
 	int pid;	// id for cur primitives vector
+
 	if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
 		pid = iid / (int)primitive.primitiveType;
 		dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
@@ -714,6 +724,25 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 			primitive.v[1].eyeNor,
 			primitive.v[2].eyeNor
 		};
+		const glm::vec2 texcoord0[3] = {
+			primitive.v[0].texcoord0,
+			primitive.v[1].texcoord0,
+			primitive.v[2].texcoord0
+		};
+		TextureData *pDiffuseTexData = primitive.v[0].dev_diffuseTex;
+		const int diffuseTexWidth = primitive.v[0].diffuseTexWidth;
+		const int diffuseTexHeight = primitive.v[0].diffuseTexHeight;
+		const int diffuseTexStride = primitive.v[0].diffuseTexStride;
+		glm::vec3 diffuseColor[3];
+
+		if (pDiffuseTexData != NULL) {
+			diffuseColor[0] = getColorFromTextureData(pDiffuseTexData, texcoord0[0],
+					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
+			diffuseColor[1] = getColorFromTextureData(pDiffuseTexData, texcoord0[1],
+					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
+			diffuseColor[2] = getColorFromTextureData(pDiffuseTexData, texcoord0[2],
+					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
+		}
 
 		if (calculateSignedArea(tri) >= 0.f) {
 			// back facing triangle
@@ -754,11 +783,19 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				if (depth > dev_depth[pixelId]) {
 					// occluded
 					continue;
+				} else {
+					dev_depth[pixelId] = depth;
 				}
 
-				dev_depth[pixelId] = depth;
-				dev_fragmentBuffer[pixelId].color = getNormalAtCoordinate(baryCoord, normal);
-				// dev_fragmentBuffer[pixelId].color =
+				if (pDiffuseTexData != NULL) {
+					// bilinear interpolate color using barycentric coordinate
+					dev_fragmentBuffer[pixelId].color = getColorAtCoordinate(
+							baryCoord, diffuseColor);
+				} else {
+					// display normal
+					dev_fragmentBuffer[pixelId].color = getNormalAtCoordinate(
+							baryCoord, normal);
+				}
 			}
 		}
 	} else if (primitive.primitiveType == Line){
@@ -851,9 +888,7 @@ void rasterizeFree() {
 			cudaFree(p->dev_normal);
 			cudaFree(p->dev_texcoord0);
 			cudaFree(p->dev_diffuseTex);
-
 			cudaFree(p->dev_verticesOut);
-
 
 			//TODO: release other attributes and materials
 		}
