@@ -16,7 +16,7 @@ Cow | Di
 
 Engine | Buggy
 :-------------------------:|:-------------------------: 
-![](imgs/engine1.gif) | ![](imgs/buggy.gif) 
+![](imgs/engine1.gif) | ![](imgs/buggy1.gif) 
 
 ### Credits
 
