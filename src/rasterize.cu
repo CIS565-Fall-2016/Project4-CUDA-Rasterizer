@@ -22,7 +22,7 @@
 #define BILIN_INTERP
 #define CONSTANT_MEM
 #define SEPARATE_INTERP
-#define OPTIM_BARY // https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
+//#define OPTIM_BARY // https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
 //#define RASTERIZE_BY_PIXEL
 #define TILED_RENDERING
 #define TILE_SIZE 32
@@ -908,7 +908,7 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Prim
             int intz = INT_MAX * -getZAtCoordinate(bCoord, triangle);
             atomicMin(&depths[pix_idx], intz);
             if (depths[pix_idx] == intz) {
-              fragments[pix_idx].prim = &prim;
+              prims[pix_idx] = &prim;
             }
           }
         }
