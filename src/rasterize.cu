@@ -112,6 +112,7 @@ static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
+static unsigned int *dev_mutex = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
@@ -183,6 +184,8 @@ void rasterizeInit(int w, int h) {
     cudaFree(dev_framebuffer);
     cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+	cudaMalloc(&dev_mutex, width * height * sizeof(unsigned int));
+	cudaMemset(dev_mutex, 0, width * height * sizeof(unsigned int));
 
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
@@ -722,7 +725,8 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId,
 
 __global__
 void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
-		Fragment *dev_fragmentBuffer, int *dev_depth, int width, int height) {
+		Fragment *dev_fragmentBuffer, int *dev_depth, int width, int height,
+		unsigned int *dev_mutex) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
 	if (idx >= totalNumPrimitives) {
@@ -788,11 +792,22 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				// too far or too near
 				if (z < 0.f || z > 1.f) continue;
 
-
 				const int depth = (int)(z * INT_MAX);
+				bool isOccluded = true;
+				// depth test, consider race condition when accessing depth buffer
+				bool isSet = false;
+				while (!isSet) {
+					isSet = atomicCAS(&dev_mutex[pixelId], 0, 1) == 0;
+					if (isSet) {
+						if (dev_depth[pixelId] > depth) {
+							dev_depth[pixelId] = depth;
+							isOccluded = false;
+						}
+						dev_mutex[pixelId] = 0;
+					}
+				}
 				// occluded
-				if (depth > dev_depth[pixelId]) continue;
-				dev_depth[pixelId] = depth;
+				if (isOccluded) continue;
 
 				// assemble fragment attributes
 				Fragment &fragment = dev_fragmentBuffer[pixelId];
@@ -872,7 +887,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
 
 	_rasterizePrimitive<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
 			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
-			width, height);
+			width, height, dev_mutex);
 	checkCUDAError("rasterize primitive");
     // Copy depthbuffer colors into framebuffer
 	render<<<blockCount2d, blockSize2d>>>(width, height, dev_fragmentBuffer,
@@ -919,6 +934,9 @@ void rasterizeFree() {
 
 	cudaFree(dev_depth);
 	dev_depth = NULL;
+
+	cudaFree(dev_mutex);;
+	dev_mutex = NULL;
 
     checkCUDAError("rasterize Free");
 }
