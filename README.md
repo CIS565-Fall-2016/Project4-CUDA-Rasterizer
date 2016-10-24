@@ -21,6 +21,7 @@ CUDA Rasterizer
 	* [ ] Blinn
 * [x] Normal Visualization
 * [x] Depth Visualization
+* [x] Depth Test with Mutex
 
 ## Overview
 
