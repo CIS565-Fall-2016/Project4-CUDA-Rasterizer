@@ -611,7 +611,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].texHeight = primitive.texHeight;
 			dev_primitives[pid + curPrimitiveBeginId].texWidth = primitive.texWidth;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 1.0, 1.0);
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 1.0, 0.0);
 			//currently default color is red for all
 		}
 		// TODO: other primitive types (point, line)

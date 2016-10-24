@@ -10,6 +10,10 @@ Milk truck | Duck
 :-------------------------:|:-------------------------: 
 ![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
 
+Cow | Milk
+:-------------------------:|:-------------------------: 
+![](imgs/cow1.gif) | ![](imgs/milk1.gif) 
+
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
