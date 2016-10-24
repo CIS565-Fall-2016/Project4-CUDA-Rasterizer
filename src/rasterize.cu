@@ -63,12 +63,13 @@ namespace {
 		// TODO: add new attributes to your Fragment
 		// The attributes listed below might be useful,
 		// but always feel free to modify on your own
-
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
-		// VertexAttributeTexcoord texcoord0;
-		// TextureData* dev_diffuseTex;
-		// ...
+		glm::vec3 eyePos;
+		glm::vec3 eyeNor;
+		glm::vec2 texcoord0;
+		TextureData* dev_diffuseTex = NULL;
+		int diffuseTexWidth;
+		int diffuseTexHeight;
+		int diffuseTexStride;
 	};
 
 	struct PrimitiveDevBufPointers {
@@ -143,14 +144,31 @@ __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-    int index = x + (y * w);
 
-    if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
+    if (x >= w || y >= h) {
+		return;
+	}
 
-		// TODO: add your fragment shader code here
+	int index = x + (y * w);
+	glm::vec3 &buffer = framebuffer[index];
+	const Fragment &fragment = fragmentBuffer[index];
+	const glm::vec3 lightPos(50.f, 50.f, 100.f);
 
-    }
+	// clear frame buffer
+	buffer = glm::vec3(0.f);
+	// buffer = fragment.eyeNor; return;// display normal
+	// buffer = glm::vec3(fragment.texcoord0, 0.f); return;// display texcoord
+
+	if (fragment.dev_diffuseTex != NULL) {
+		const glm::vec3 diffuseColor = getColorFromTextureAtCoordinate(
+				fragment.dev_diffuseTex, fragment.texcoord0, fragment.diffuseTexWidth,
+				fragment.diffuseTexHeight, fragment.diffuseTexStride);
+		const float LdotN = glm::dot(glm::normalize(lightPos - fragment.eyePos),
+				fragment.eyeNor);
+
+		// lambert diffuse
+		buffer = max(0.f, LdotN) * diffuseColor;
+	}
 }
 
 /**
@@ -719,7 +737,12 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 			glm::vec3(primitive.v[1].pos),
 			glm::vec3(primitive.v[2].pos),
 		};
-		const glm::vec3 normal[3] = {
+		const glm::vec3 eyePos[3] = {
+			primitive.v[0].eyePos,
+			primitive.v[1].eyePos,
+			primitive.v[2].eyePos
+		};
+		const glm::vec3 eyeNor[3] = {
 			primitive.v[0].eyeNor,
 			primitive.v[1].eyeNor,
 			primitive.v[2].eyeNor
@@ -730,24 +753,18 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 			primitive.v[2].texcoord0
 		};
 		TextureData *pDiffuseTexData = primitive.v[0].dev_diffuseTex;
-		const int diffuseTexWidth = primitive.v[0].diffuseTexWidth;
-		const int diffuseTexHeight = primitive.v[0].diffuseTexHeight;
-		const int diffuseTexStride = primitive.v[0].diffuseTexStride;
-		glm::vec3 diffuseColor[3];
+		int diffuseTexWidth = 0;
+		int diffuseTexHeight = 0;
+		int diffuseTexStride = 0;
 
 		if (pDiffuseTexData != NULL) {
-			diffuseColor[0] = getColorFromTextureData(pDiffuseTexData, texcoord0[0],
-					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
-			diffuseColor[1] = getColorFromTextureData(pDiffuseTexData, texcoord0[1],
-					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
-			diffuseColor[2] = getColorFromTextureData(pDiffuseTexData, texcoord0[2],
-					diffuseTexWidth, diffuseTexHeight, diffuseTexStride);
+			diffuseTexWidth = primitive.v[0].diffuseTexWidth;
+			diffuseTexHeight = primitive.v[0].diffuseTexHeight;
+			diffuseTexStride = primitive.v[0].diffuseTexStride;
 		}
 
-		if (calculateSignedArea(tri) >= 0.f) {
-			// back facing triangle
-			return;
-		}
+		// back facing triangle
+		if (calculateSignedArea(tri) >= 0.f) return;
 
 		const AABB aabb = getAABBForTriangle(tri);
 		const int left = max(0, (int)aabb.min.x - 1);
@@ -755,46 +772,41 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 		const int bottom = max(0, (int)aabb.min.y - 1);
 		const int top = min(height, (int)aabb.max.y + 1);
 
-		if (left >= right || bottom >= top) {
-			// outsides screen
-			return;
-		}
+		// outsides screen
+		if (left >= right || bottom >= top) return;
 
 		for (int i = left; i < right; ++i) {
 			for (int j = bottom; j < top; ++j) {
-				int pixelId = i + j * width;
-				glm::vec2 p(i + .5f, j + .5f);
-				glm::vec3 baryCoord = calculateBarycentricCoordinate(tri, p);
+				const int pixelId = i + j * width;
+				const glm::vec2 p(i + .5f, j + .5f);
+				const glm::vec3 baryCoord = calculateBarycentricCoordinate(tri, p);
 
-				if (!isBarycentricCoordInBounds(baryCoord)) {
-					// outsides triangle
-					continue;
-				}
+				// outsides triangle
+				if (!isBarycentricCoordInBounds(baryCoord)) continue;
 
-				float z = getZAtCoordinate(baryCoord, tri);
+				const float z = getZAtCoordinate(baryCoord, tri);
+				// too far or too near
+				if (z < 0.f || z > 1.f) continue;
 
-				if (z < 0.f || z > 1.f) {
-					// too far or too near
-					continue;
-				}
 
-				int depth = (int)(z * INT_MAX);
+				const int depth = (int)(z * INT_MAX);
+				// occluded
+				if (depth > dev_depth[pixelId]) continue;
+				dev_depth[pixelId] = depth;
 
-				if (depth > dev_depth[pixelId]) {
-					// occluded
-					continue;
-				} else {
-					dev_depth[pixelId] = depth;
-				}
+				// assemble fragment attributes
+				Fragment &fragment = dev_fragmentBuffer[pixelId];
+
+				fragment.eyePos = getVec3AtCoordinate(baryCoord, eyePos);
+				fragment.eyeNor = glm::normalize(getVec3AtCoordinate(baryCoord, eyeNor));
+				fragment.texcoord0 = getVec2AtCoordinate(baryCoord, texcoord0);
 
 				if (pDiffuseTexData != NULL) {
-					// bilinear interpolate color using barycentric coordinate
-					dev_fragmentBuffer[pixelId].color = getColorAtCoordinate(
-							baryCoord, diffuseColor);
-				} else {
-					// display normal
-					dev_fragmentBuffer[pixelId].color = getNormalAtCoordinate(
-							baryCoord, normal);
+					// diffuse texture provided
+					fragment.dev_diffuseTex = pDiffuseTexData;
+					fragment.diffuseTexWidth = diffuseTexWidth;
+					fragment.diffuseTexHeight = diffuseTexHeight;
+					fragment.diffuseTexStride = diffuseTexStride;
 				}
 			}
 		}

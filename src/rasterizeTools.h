@@ -101,38 +101,39 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 }
 
  /**
-  * For a given barycentric coordinate, compute the corresponding normal
+  * For a given barycentric coordinate, compute the corresponding vec3
   * on the triangle.
   */
   __host__ __device__ static
-  glm::vec3 getNormalAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 normal[3]) {
- 	 return barycentricCoord.x * normal[0]
- 	 		+ barycentricCoord.y * normal[1]
- 			+ barycentricCoord.z * normal[2];
+  glm::vec3 getVec3AtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 input[3]) {
+ 	 return barycentricCoord.x * input[0]
+ 	 		+ barycentricCoord.y * input[1]
+ 			+ barycentricCoord.z * input[2];
   }
+
+/**
+ * For a given barycentric coordinate, compute the corresponding vec2
+ * on the triangle.
+ */
+__host__ __device__ static
+glm::vec2 getVec2AtCoordinate(const glm::vec3 barycentricCoord, const glm::vec2 input[3]) {
+	 return barycentricCoord.x * input[0]
+	 		+ barycentricCoord.y * input[1]
+			+ barycentricCoord.z * input[2];
+}
 
 /**
  * For a given texture data pointer, compute a color vector at spcified texcoord.
 */
 __host__ __device__ static
-glm::vec3 getColorFromTextureData(const unsigned char *pTextureData,
+glm::vec3 getColorFromTextureAtCoordinate(const unsigned char *pTextureData,
 		const glm::vec2 texcoord, int w, int h, int stride) {
-	int x = (int)(w * texcoord.x) % w;
+			int x = (int)(w * texcoord.x) % w;
+	const float scale = 1.f / 255.f;
 	int y = (int)(h * texcoord.y) % h;
 	int index = x + y * w;
 
-	return glm::vec3(pTextureData[index * stride] / 255.f,
-			pTextureData[index * stride + 1] / 255.f,
-			pTextureData[index * stride + 2] / 255.f);
+	return scale * glm::vec3(pTextureData[index * stride],
+			pTextureData[index * stride + 1],
+			pTextureData[index * stride + 2]);
 }
-
-/**
- * For a given barycentric coordinate, compute the corresponding color
- * on the triangle.
- */
- __host__ __device__ static
- glm::vec3 getColorAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 color[3]) {
-	return barycentricCoord.x * color[0]
-		   + barycentricCoord.y * color[1]
-		   + barycentricCoord.z * color[2];
- }

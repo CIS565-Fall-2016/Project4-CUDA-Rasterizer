@@ -16,14 +16,21 @@ CUDA Rasterizer
 * [ ] Texture
 	* [x] Diffuse
 	* [ ] Normal Map
+* [ ] Lighting
+	* [x] Lambert
+	* [ ] Blinn
 * [x] Normal Visualization
 * [x] Depth Visualization
 
 ## Overview
 
-Diffuse Texture | Normal | Depth
---- | --- | ---
-![](img/cover_diffuse.gif) | ![](img/cover_normal.gif) | ![](img/cover_depth.gif)
+Texture | Normal | Depth | Texcoord
+--- | --- | --- | ---
+![](img/cover_diffuse.gif) | ![](img/cover_normal.gif) | ![](img/cover_depth.gif) | ![](img/cover_texcoord.gif)
+
+Lambert | Blinn
+--- | ---
+ ![](img/cover_lambert.gif) |  ![](http://i.imgur.com/rdbwMci.jpg)
 
 ### Credits
 
