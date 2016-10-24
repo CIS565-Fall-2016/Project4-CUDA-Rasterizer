@@ -23,6 +23,8 @@
 #define IDy ((blockIdx.y * blockDim.y) + threadIdx.y)
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
+#define getIndex(i, j, width) (i * width + j)
+
 
 #define DEBUG 1
 #define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
@@ -73,8 +75,8 @@ namespace {
     // The attributes listed below might be useful, 
     // but always feel free to modify on your own
 
-     glm::vec3 eyePos;  // eye space position used for shading
-     glm::vec3 eyeNor;
+     glm::vec3 viewPos;  // eye space position used for shading
+     glm::vec3 viewNor;
      VertexAttributeTexcoord texcoord0;
      TextureData* dev_diffuseTex;
     // ...
@@ -690,6 +692,7 @@ glm::vec3 intersect(glm::vec3 vector, glm::mat3 plane) {
 }
 
 
+
 __device__
 int getFragmentDepth(int x, int y, glm::vec3 tri[3]) {
 
@@ -712,17 +715,6 @@ int getFragmentDepth(int x, int y, glm::vec3 tri[3]) {
   }
 
 }
-
-__device__ 
-int getIndex(int i, int j, int width) {
-  return i * width + j;
-}
-
-__global__
-void test() {
-  debug("test ");
-}
-
 
 __global__
 void _rasterize(int n_primitives, int height, int width,
@@ -758,7 +750,8 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
   range(i, 0, height) {
     range(j, 0, width) { 
       int index = getIndex(i, j, width);
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+      glm::vec2 viewPos = glm::vec2(i, j);
+      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
       if (isBarycentricCoordInBounds(barycentricCoord)) {
 
         int depth = getFragmentDepth(i, j, tri);
@@ -766,9 +759,11 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
           Fragment &fragment = fragments[index];
           //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-          //fragment.dev_diffuseTex = vertex.dev_diffuseTex;
-          //fragment.eyeNor = vertex.eyeNor;
-          //fragment.eyePos = vertex.eyePos;
+          fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+          fragment.viewNor = primitive.v[0].viewNor;
+          fragment.viewPos = glm::vec3(viewPos, depth);
+
+          //fragment.viewPos = vertex.eyePos;
           //fragment.texcoord0 = vertex.texcoord0;
 
           ////TODO: get rid of this
