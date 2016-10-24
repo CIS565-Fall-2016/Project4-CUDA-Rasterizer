@@ -29,26 +29,32 @@
 #define PROFILING_PREFIX            "C:\\Users\\213re\\Code\\coursework\\565CIS\\Project4-CUDA-Rasterizer\\profiling\\"
 
 #ifndef PROFILE_KERNEL
+#define PROFILE_KERNEL
 #if PROFILING
-#define PROFILE_KERNEL(name, blocks, threads, ...) { \
-  cudaEvent_t start, stop; \
-  cudaEventCreate(&start); \
-  cudaEventCreate(&stop); \
-  cudaEventRecord(start); \
-  name << < blocks, threads >> > (__VA_ARGS__); \
-  cudaEventRecord(stop); \
-  cudaEventSynchronize(stop); \
-  float milliseconds = 0; \
-  cudaEventElapsedTime(&milliseconds, start, stop); \
-  cudaEventDestroy(start); \
-  cudaEventDestroy(stop); \
-  std::ofstream out; \
-  out.open(PROFILING_PREFIX "PROFILE_" #name ".txt", std::ios::out | std::ios::app); \
-  out << milliseconds << std::endl; \
-  out.close(); \
-}
-#else
-#define PROFILE_KERNEL(name, blocks, threads, ...) name << < blocks, threads >> > (__VA_ARGS__);
+
+#define START_PROFILE(name) \
+  cudaEvent_t start_##name, stop_##name; \
+  cudaEventCreate(&start_##name); \
+  cudaEventCreate(&stop_##name); \
+  cudaEventRecord(start_##name);
+
+#define END_PROFILE(name) \
+  cudaEventRecord(stop_##name); \
+  cudaEventSynchronize(stop_##name); \
+  float milliseconds_##name = 0; \
+  cudaEventElapsedTime(&milliseconds_##name, start_##name, stop_##name); \
+  cudaEventDestroy(start_##name); \
+  cudaEventDestroy(stop_##name); \
+  std::ofstream out_##name; \
+  out_##name.open(PROFILING_PREFIX "PROFILE_" #name ".txt", std::ios::out | std::ios::app); \
+  out_##name << milliseconds_##name << std::endl; \
+  out_##name.close();
+
+#else 
+
+#define START_PROFILE(name)
+#define END_PROFILE(name)
+
 #endif
 #endif
 

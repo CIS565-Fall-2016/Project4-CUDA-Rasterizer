@@ -17,6 +17,11 @@ struct AABB {
     glm::vec3 max;
 };
 
+struct AABBScreen {
+  glm::vec2 min;
+  glm::vec2 max;
+};
+
 /**
  * Multiplies a glm::mat4 matrix and a vec4.
  */
@@ -43,6 +48,15 @@ AABB getAABBForTriangle(const glm::vec3 tri[3]) {
     return aabb;
 }
 
+__host__ __device__ static
+AABBScreen getAABBForTriangleScreen(const glm::vec2 &v0, const glm::vec2 &v1, const glm::vec2 &v2) {
+  AABBScreen aabb = {
+    glm::vec2((int)__min(__min(v0.x, v1.x), v2.x), (int)__min(__min(v0.y, v1.y), v2.y)),
+    glm::vec2((int)__max(__max(v0.x, v1.x), v2.x), (int)__max(__max(v0.y, v1.y), v2.y)),
+  };
+  return aabb;
+}
+
 // CHECKITOUT
 /**
  * Calculate the signed area of a given triangle.
@@ -50,6 +64,11 @@ AABB getAABBForTriangle(const glm::vec3 tri[3]) {
 __host__ __device__ static
 float calculateSignedArea(const glm::vec3 tri[3]) {
     return 0.5 * ((tri[2].x - tri[0].x) * (tri[1].y - tri[0].y) - (tri[1].x - tri[0].x) * (tri[2].y - tri[0].y));
+}
+
+__host__ __device__ static
+float calculateSignedParallelogramArea(const glm::vec2& v0, const glm::vec2& v1, const glm::vec2& v2) {
+  return ((v2.x - v0.x) * (v1.y - v0.y) - (v1.x - v0.x) * (v2.y - v0.y));
 }
 
 // CHECKITOUT
@@ -101,8 +120,10 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 }
 
 __host__ __device__ static
-float getCorrectZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3], const float zs[3]) {
+float getCorrectZAtCoordinate(const glm::vec3 barycentricCoord, const float zs[3]) {
   return 1.f / (barycentricCoord.x / zs[0]
     + barycentricCoord.y / zs[1]
     + barycentricCoord.z / zs[2]);
 }
+
+#define BARY_INTERP(coord, val1, val2, val3) (coord.x * val1 + coord.y * val2 + coord.z * val3)
