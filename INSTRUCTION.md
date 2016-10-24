@@ -1,7 +1,7 @@
 Instructions - CUDA-RASTERIZER
 ========================
 
-This is due **Tuesday, October 25, evening at midnight**.
+This is due ~~**Tuesday, October 25, evening at midnight**.~~ **Friday, October 28, evening at midnight**
 
 **Summary:**
 In this project, you will use CUDA to implement a simplified
@@ -33,6 +33,7 @@ bunch of them around so you can pick a few to document your progress.
   * `gltfs/box/box.gltf` (8 vertices, 12 triangles, start with this)
   * `gltfs/cow/cow.gltf`
   * `gltfs/duck/duck.gltf` (has a diffuse texture)
+  * `gltfs/checkerboard/checkerboard.gltf` (has a diffuse texture, can be used for testing perspective correct interpolation)
   * `gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf` (has several textures)
   * `gltfs/flower/flower.gltf` (model with a lot of layers from most angles)
   * `gltfs/2_cylinder_engine/2_cylinder_engine.gltf` (relatively complex model, no texture, need to rescale to show in the center of screen)
