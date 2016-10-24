@@ -22,6 +22,8 @@ VC
 ![](imgs/VC1.gif)
 
 
+#PS: looking for models: just we & just tank
+
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
