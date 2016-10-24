@@ -23,6 +23,9 @@
 #define CONSTANT_MEM
 #define SEPARATE_INTERP
 #define OPTIM_BARY // https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
+//#define RASTERIZE_BY_PIXEL
+#define TILED_RENDERING
+#define TILE_SIZE 32
 
 namespace {
 
@@ -116,6 +119,7 @@ static int height = 0;
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
+static Primitive* *dev_primitiveBuffer = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
@@ -247,6 +251,10 @@ void rasterizeInit(int w, int h) {
     cudaFree(dev_framebuffer);
     cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+
+  cudaFree(dev_primitiveBuffer);
+  cudaMalloc(&dev_primitiveBuffer, width * height * sizeof(Primitive*));
+  cudaMemset(dev_primitiveBuffer, 0, width * height * sizeof(Primitive*));
     
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
@@ -804,7 +812,33 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __global__
-void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Fragment* fragments, int width, int height) {
+void _rasterizeByPixel(int numPrimitives, Primitive* primitives, Fragment* fragments, int width, int height) {
+  int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+  int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+  int idx = x + y * width;
+  
+  int pid;
+  float closest = -1;
+  int pidx = -1;
+  for (pid = 0; pid < numPrimitives; ++pid) {
+    glm::vec3 triangle[3];
+    triangle[0] = glm::vec3(primitives[pid].v[0].pos);
+    triangle[1] = glm::vec3(primitives[pid].v[1].pos);
+    triangle[2] = glm::vec3(primitives[pid].v[2].pos);
+    glm::vec3 bCoord = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+    if (isBarycentricCoordInBounds(bCoord)) {
+      float z = -getZAtCoordinate(bCoord, triangle);
+      if (z < closest || closest == -1) {
+        closest = z;
+        pidx = pid;
+      }
+    }
+  }
+  if (pidx >= 0) fragments[idx].prim = primitives + pidx;
+}
+
+__global__
+void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Primitive** prims, int width, int height) {
     // primitive id
     int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (pid < numPrimitives) {
@@ -850,7 +884,8 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Frag
             int intz = INT_MAX * (w0 * prim.v[0].pos.z + w1 * prim.v[1].pos.z + w2 * prim.v[2].pos.z) / (w0 + w1 + w2);
             atomicMin(&depths[pix_idx], intz);
             if (depths[pix_idx] == intz) {
-              fragments[pix_idx].prim = &prim;
+              prims[pix_idx] = &prim;
+              //fragments[pix_idx].prim = &prim;
             }
           }
 
@@ -883,16 +918,16 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Frag
 }
 
 __global__
-void _interpolateAttributes(Fragment* fragments, int width, int height) {
+void _interpolateAttributes(Fragment* fragments, Primitive** prims, int width, int height) {
 
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + y * width;
 
     if (x < width && y < height) {
+      if (prims[index] == NULL) return;
       Fragment& frag = fragments[index];
-      if (frag.prim == NULL) return;
-      Primitive& prim = *frag.prim;
+      Primitive& prim = *prims[index];
 
       glm::vec3 triangle[3] = { glm::vec3(prim.v[0].pos), glm::vec3(prim.v[1].pos), glm::vec3(prim.v[2].pos) };
 #ifdef PERSPECTIVE_CORRECT
@@ -1069,18 +1104,25 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	}
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+  cudaMemset(dev_primitiveBuffer, NULL, width * height * sizeof(Primitive*));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 
 	// TODO: rasterize
   dim3 numThreadsPerBlock(128);
   dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 #ifdef SEPARATE_INTERP
+#ifdef RASTERIZE_BY_PIXEL
+  START_PROFILE(rasterize_pixels)
+  _rasterizeByPixel<<<blockCount2d, blockSize2d>>>(totalNumPrimitives, dev_primitives, dev_fragmentBuffer, width, height);
+  END_PROFILE(rasterize_pixels)
+#else
   START_PROFILE(rasterize_prims)
-  _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
+  _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_primitiveBuffer, width, height);
   END_PROFILE(rasterize_prims)
-  //START_PROFILE(interpolate)
-  _interpolateAttributes << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, width, height);
-  //END_PROFILE(interpolate)
+#endif
+  START_PROFILE(interpolate)
+  _interpolateAttributes << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, dev_primitiveBuffer, width, height);
+  END_PROFILE(interpolate)
 #else
   START_PROFILE(rasterize)
     _rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_fragmentBuffer, width, height);
