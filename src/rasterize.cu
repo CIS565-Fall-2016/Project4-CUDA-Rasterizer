@@ -10,7 +10,7 @@
 
 #include "rasterize.h"
 #include "common.h"
- 
+
 #define USETEXTURE 1
 #define USELIGHT 1
 #define USEBILINFILTER 1
@@ -40,27 +40,27 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 /**
 * Writes fragment colors to the framebuffer
 */
- 
+
 __device__ __host__
-glm::vec3 getTextureVal(int x, int y, int width, int height, TextureData * tex, int texture ) {
- 
+glm::vec3 getTextureVal(int x, int y, int width, int height, TextureData * tex, int texture) {
+
 	if (x < width && y < height&&x >= 0 && y >= 0){
 		int id = x + y*width;
 		int id0 = texture*id;
-		return  glm::vec3(tex[id0], tex[id0 + 1], tex[id0 + 2])/255.0f;
+		return  glm::vec3(tex[id0], tex[id0 + 1], tex[id0 + 2]) / 255.0f;
 	}
 	return glm::vec3(0.0f);
- 
+
 }
 __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	int index = x + (y * w);
-	 
+
 	glm::vec3 light = glm::normalize(glm::vec3(1, 2, 3));
 
-	if (x < w && y < h  ) {
+	if (x < w && y < h) {
 		Fragment & curFrag = fragmentBuffer[index];
 		framebuffer[index] = fragmentBuffer[index].color;
 #if USELIGHT==1		
@@ -564,24 +564,28 @@ int width, int height) {
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
 		// Then divide the pos by its w element to transform into NDC space
 		// Finally transform x and y to viewport space
-
-
-		glm::vec4 mvpos = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
-		glm::vec3 eyepos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.0f));
+		 
+		
+		VertexAttributePosition & curpos = primitive.dev_position[vid];
+		VertexOut & out = primitive.dev_verticesOut[vid]; 
+		glm::vec4 mvpos = MVP * glm::vec4(curpos, 1.0f);
+		glm::vec3 eyepos = glm::vec3(MV * glm::vec4(curpos, 1.0f));
 		glm::vec4 ndc = mvpos / mvpos.w;
 		ndc.x = (1 - ndc.x)*width / 2;
 		ndc.y = (1 - ndc.y)*height / 2;
-		//add texture here
-		primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
-		primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];		
-		primitive.dev_verticesOut[vid].texHeight = primitive.texHeight;
-		primitive.dev_verticesOut[vid].texWidth = primitive.texWidth;
-		primitive.dev_verticesOut[vid].texture = primitive.texture;
-		
-		primitive.dev_verticesOut[vid].pos = ndc;		 
-		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
-		primitive.dev_verticesOut[vid].eyePos = eyepos;
 
+		out.pos = ndc;
+		out.eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
+		out.eyePos = eyepos;
+
+		out.dev_diffuseTex = primitive.dev_diffuseTex;
+		if (primitive.dev_diffuseTex != NULL) {
+			out.texcoord0 = primitive.dev_texcoord0[vid];
+		}		
+		out.texWidth = primitive.texWidth;
+		out.texHeight = primitive.texHeight;
+		out.texture = primitive.texture;
+ 
 
 	}
 }
@@ -628,22 +632,22 @@ __device__ __host__ int getMax(int a, int b){
 		return b;
 	}
 }
- 
+
 __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 	int idx = threadIdx.x + (blockIdx.x*blockDim.x);
 	int idy = threadIdx.y + (blockIdx.y*blockDim.y);
 	if (idx < width&&idy < height){
 		int index = idx + idy*width;
 		Fragment & curFrag = fragments[index];
-		if (curFrag.dev_diffuseTex != NULL){ 
+		if (curFrag.dev_diffuseTex != NULL){
 			float tix = 0.5f + curFrag.texcoord0.x * (curFrag.texWidth - 1);
 			float tiy = 0.5f + curFrag.texcoord0.y * (curFrag.texHeight - 1);
 			int twidth = curFrag.texWidth;
 			int theight = curFrag.texHeight;
 #if USEBILINFILTER==1
 			//reference https://en.wikipedia.org/wiki/Bilinear_filtering
-			float u = tix*1 - 0.5;
-			float v = tiy*1 - 0.5;
+			float u = tix * 1 - 0.5;
+			float v = tiy * 1 - 0.5;
 			//float u = tix;
 			//float v = tiy;
 			float x = glm::floor(u);
@@ -656,14 +660,14 @@ __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 			glm::vec3 t01 = getTextureVal(x, y + 1, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
 			glm::vec3 t10 = getTextureVal(x + 1, y, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
 			glm::vec3 t11 = getTextureVal(x + 1, y + 1, curFrag.texWidth, curFrag.texHeight, curFrag.dev_diffuseTex, curFrag.texture);
- 
+
 			curFrag.color = (t00*u_opposite + t10*u_ratio)*v_opposite + (t01*u_opposite + t11*u_ratio)*v_ratio;
 #else
 			curFrag.color = getTextureVal(tix, tiy, twidth, theight, curFrag.dev_diffuseTex, curFrag.texture);
 #endif
 		}
 	}
-	
+
 }
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
@@ -672,46 +676,46 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		Primitive & curPrim = primitives[index];
 		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
-			glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
-			AABB aabb = getAABBForTriangle(triangle);
-			//brute force baricentric 
-			int xmin =   aabb.min.x ;
-			int xmax = aabb.max.x;
-			int ymin =   aabb.min.y ;
-			int ymax = aabb.max.y;
+		glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
+		AABB aabb = getAABBForTriangle(triangle);
+		//brute force baricentric 
+		int xmin = aabb.min.x;
+		int xmax = aabb.max.x;
+		int ymin = aabb.min.y;
+		int ymax = aabb.max.y;
 
-			int fixedDepth;
-			for (int x = xmin; x <= xmax; x++){
-				for (int y = ymin; y <= ymax; y++){
-					int pid = x + y*width;
-					glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
-					if (isBarycentricCoordInBounds(barcen)){
-						float zval = getZAtCoordinate(barcen, triangle);
-						fixedDepth = -(int)INT_MAX*zval;
-						atomicMin(&depths[pid], fixedDepth);
-						if (depths[pid] == fixedDepth){
-							Fragment & curFrag = fragments[pid];
-							curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
-							curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
-							//add texture here
-							curFrag.dev_diffuseTex = vertex0.dev_diffuseTex;
-							curFrag.texHeight = vertex0.texHeight;
-							curFrag.texWidth = vertex0.texWidth;
-							curFrag.texture = vertex0.texture;
-							//add color here (in case no texture)
-							curFrag.color = barcen.x*curPrim.v[0].col + barcen.y*curPrim.v[1].col + barcen.z*curPrim.v[2].col;
+		int fixedDepth;
+		for (int x = xmin; x <= xmax; x++){
+			for (int y = ymin; y <= ymax; y++){
+				int pid = x + y*width;
+				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y));
+				if (isBarycentricCoordInBounds(barcen)){
+					float zval = getZAtCoordinate(barcen, triangle);
+					fixedDepth = -(int)INT_MAX*zval;
+					atomicMin(&depths[pid], fixedDepth);
+					if (depths[pid] == fixedDepth){
+						Fragment & curFrag = fragments[pid];
+						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
+						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
+						//add texture here
+						curFrag.dev_diffuseTex = vertex0.dev_diffuseTex;
+						curFrag.texHeight = vertex0.texHeight;
+						curFrag.texWidth = vertex0.texWidth;
+						curFrag.texture = vertex0.texture;
+						//add color here (in case no texture)
+						curFrag.color = barcen.x*curPrim.v[0].col + barcen.y*curPrim.v[1].col + barcen.z*curPrim.v[2].col;
 #if USEPERSPECTIVECORRECTION==1 //https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness for reference
-							glm::vec3 tmp = glm::vec3(barcen.x / curPrim.v[0].eyePos.z, barcen.y / curPrim.v[1].eyePos.z, barcen.z / curPrim.v[2].eyePos.z);
-							curFrag.texcoord0 = tmp.x*curPrim.v[0].texcoord0 + tmp.y*curPrim.v[1].texcoord0 + tmp.z*curPrim.v[2].texcoord0;
-							curFrag.texcoord0 /=(tmp.x+tmp.y+tmp.z);
+						glm::vec3 tmp = glm::vec3(barcen.x / curPrim.v[0].eyePos.z, barcen.y / curPrim.v[1].eyePos.z, barcen.z / curPrim.v[2].eyePos.z);
+						curFrag.texcoord0 = tmp.x*curPrim.v[0].texcoord0 + tmp.y*curPrim.v[1].texcoord0 + tmp.z*curPrim.v[2].texcoord0;
+						curFrag.texcoord0 /= (tmp.x + tmp.y + tmp.z);
 #else
-							curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
+						curFrag.texcoord0 = barcen.x*curPrim.v[0].texcoord0 + barcen.y*curPrim.v[1].texcoord0 + barcen.z*curPrim.v[2].texcoord0;
 
 #endif
-						}
 					}
 				}
 			}
+		}
 		//}
 	}
 }
