@@ -8,7 +8,7 @@ CUDA Rasterizer
 
 Milk truck | Duck
 :-------------------------:|:-------------------------: 
-![](imgs/milk1.gif) | ![](imgs/duck.gif) 
+![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
 
 ### Credits
 
