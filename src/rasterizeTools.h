@@ -99,3 +99,54 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
            + barycentricCoord.y * tri[1].z
            + barycentricCoord.z * tri[2].z);
 }
+
+/**
+* For a given barycentric coordinate, compute the corresponding perspective correct z 
+* position (i.e. depth) on the triangle.
+*/
+__host__ __device__ static
+float getPerspectiveCorrectZAtCoordinate(const glm::vec3 screenSpaceBarycentric, const glm::vec3 tri[3]) 
+{
+	float inverseZ = screenSpaceBarycentric.x / tri[0].z + screenSpaceBarycentric.y / tri[1].z + screenSpaceBarycentric.z / tri[2].z;
+
+	return 1.0f / inverseZ;
+}
+
+/**
+* For a given barycentric coordinate, compute the corresponding perspective correct
+* normals on the triangle.
+*/
+__host__ __device__ static
+glm::vec3 getPerspectiveCorrectNormalAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3], const glm::vec3 triNormals[3], float depth) {
+	return depth * glm::vec3(
+		barycentricCoord.x * triNormals[0] / tri[0].z +
+		barycentricCoord.y * triNormals[1] / tri[1].z +
+		barycentricCoord.z * triNormals[2] / tri[2].z);
+}
+
+/**
+* For a given barycentric coordinate, compute the corresponding perspective correct
+* texture coordinate on the triangle.
+*/
+__host__ __device__ static
+glm::vec2 getPerspectiveCorrectTexcoordAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3], const glm::vec2 triTexCoord[3], float depth) {
+	return depth * glm::vec2(
+		barycentricCoord.x * triTexCoord[0] / tri[0].z +
+		barycentricCoord.y * triTexCoord[1] / tri[1].z +
+		barycentricCoord.z * triTexCoord[2] / tri[2].z);
+}
+
+
+// From https://devtalk.nvidia.com/default/topic/492068/atomicmin-with-float/
+__device__ static
+float fatomicMin(float *addr, float value)
+{
+	float old = *addr, assumed;
+	if (old <= value) return old;
+	do {
+		assumed = old;
+		old = atomicCAS((unsigned int*)addr, __float_as_int(assumed), __float_as_int(value));
+	} while (old != assumed);
+	
+	return old;
+}

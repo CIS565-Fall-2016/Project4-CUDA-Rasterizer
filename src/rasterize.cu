@@ -18,6 +18,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+//#define RENDER_DEPTH_ONLY
+//#define RENDER_NORMAL_ONLY
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -46,7 +49,7 @@ namespace {
 		// glm::vec3 col;
 		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
+		 int texWidth, texHeight;
 		// ...
 	};
 
@@ -64,8 +67,12 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;
-		// VertexAttributeTexcoord texcoord0;
-		 TextureData* dev_diffuseTex;
+		 //VertexAttributeTexcoord texcoord0;
+
+#ifdef RENDER_DEPTH_ONLY
+		 float depth;
+#endif
+		 //TextureData* dev_diffuseTex;
 		// ...
 	};
 
@@ -109,7 +116,7 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
-static int * dev_depth = NULL;	// you might need this buffer when doing depth test
+static float * dev_depth = NULL;	// you might need this buffer when doing depth test
 
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
@@ -143,10 +150,14 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int index = x + (y * w);
 
     if (x < w && y < h) {
-        //framebuffer[index] = glm::clamp(glm::abs(fragmentBuffer[index].eyeNor), 0.0f, 1.0f);
+#ifdef RENDER_DEPTH_ONLY
+		framebuffer[index] = glm::vec3(fragmentBuffer[index].depth, fragmentBuffer[index].depth, fragmentBuffer[index].depth);
+#elif defined(RENDER_NORMAL_ONLY)
+		framebuffer[index] = glm::abs(fragmentBuffer[index].eyeNor);
+#else // Render with colors
 		framebuffer[index] = fragmentBuffer[index].color;
-
-		// TODO: add your fragment shader code here
+#endif
+		// TODO: add your fragmentt shader code here
     }
 }
 
@@ -164,13 +175,13 @@ void rasterizeInit(int w, int h) {
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
 	cudaFree(dev_depth);
-	cudaMalloc(&dev_depth, width * height * sizeof(int));
+	cudaMalloc(&dev_depth, width * height * sizeof(float));
 
 	checkCUDAError("rasterizeInit");
 }
 
 __global__
-void initDepth(int w, int h, int * depth)
+void initDepth(int w, int h, float * depth)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -178,7 +189,7 @@ void initDepth(int w, int h, int * depth)
 	if (x < w && y < h)
 	{
 		int index = x + (y * w);
-		depth[index] = INT_MAX;
+		depth[index] = INFINITY;
 	}
 }
 
@@ -648,10 +659,13 @@ void _vertexTransformAndAssembly(
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
 		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
-		primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.0f));
 
+		glm::vec4 eyeSpacePosition = MV * glm::vec4(primitive.dev_position[vid], 1.0f);
+		eyeSpacePosition /= eyeSpacePosition.w;
+		primitive.dev_verticesOut[vid].eyePos = glm::vec3(eyeSpacePosition);
 		primitive.dev_verticesOut[vid].pos = transformedPosition;
-
+		primitive.dev_verticesOut[vid].texWidth = primitive.diffuseTexWidth;
+		primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
 	}
 }
 
@@ -688,7 +702,7 @@ void _rasterize(
 	int numPrimitives, 
 	Primitive* primitives,
 	Fragment* fragmentBuffer,
-	int * depths,
+	float * depths,
 	int width,
 	int height
 	)
@@ -711,7 +725,7 @@ void _rasterize(
 		for (int x = bbox.min.x; x <= bbox.max.x; ++x) {
 			for (int y = bbox.min.y; y <= bbox.max.y; ++y) {
 				
-				// Compute barycentric coordiante for the given point
+				// Compute barycentric coordinate for the given point
 				// and compare that to see if the point is inside the 
 				// triangle
 				glm::vec2 point(x, y);
@@ -719,35 +733,55 @@ void _rasterize(
 
 				if (isBarycentricCoordInBounds(screenSpaceBarycentric)) {
 
-					//// barycentric in view space
-					//glm::vec3 eyePositions[3] = {
-					//	primitive.v[0].eyePos,
-					//	primitive.v[1].eyePos,
-					//	primitive.v[2].eyePos
-					//};
-					//glm::vec3 eyeSpaceBarycentric = calculateBarycentricCoordinate(eyePositions, point);
-
-					//// Interpolate the normal
-					//glm::vec3 normals[3] = {
-					//	primitive.v[0].eyeNor,
-					//	primitive.v[1].eyeNor,
-					//	primitive.v[2].eyeNor
-					//};
-
-					//glm::vec3 eyeSpaceNormal = glm::normalize(normals[0] * (1 - eyeSpaceBarycentric.x - eyeSpaceBarycentric.y) + normals[1] * eyeSpaceBarycentric.x + normals[2] * eyeSpaceBarycentric.y);
-
+					// Interpolate depth
+					float depth = getPerspectiveCorrectZAtCoordinate(screenSpaceBarycentric, tri);
 
 					int index = x + (y * width);
-					//fragmentBuffer[index].eyeNor = eyeSpaceNormal;
-					fragmentBuffer[index].color = glm::vec3(1.0f, 1.0f, 1.0f);
+					if (depth < depths[index]) {
+						fatomicMin(&depths[index], depth);
 
-					//// Interpolate depth depth
-					//int depth = getZAtCoordinate(eyeSpaceBarycentric, eyePositions);
+						// Interpolate normal
+						glm::vec3 eyeSpaceNormals[3] = {
+							primitive.v[0].eyeNor,
+							primitive.v[1].eyeNor,
+							primitive.v[2].eyeNor
+						};
 
-					//if (true || depth < depths[index]) {
-					//	//atomicMin(&depths[index], depth);
+						glm::vec3 perspectiveCorrectNormal = getPerspectiveCorrectNormalAtCoordinate(
+							screenSpaceBarycentric, 
+							tri,
+							eyeSpaceNormals,
+							depth);
 
-					//}
+						// Interpolate texture coords
+						glm::vec2 texcoords[3] = {
+							primitive.v[0].texcoord0,
+							primitive.v[1].texcoord0,
+							primitive.v[2].texcoord0
+						};
+
+						glm::vec2 perspectiveCorrectTexcoord = getPerspectiveCorrectTexcoordAtCoordinate(
+							screenSpaceBarycentric,
+							tri,
+							texcoords,
+							depth
+							);
+
+						// Write out fragment values
+#ifdef  RENDER_DEPTH_ONLY
+						fragmentBuffer[index].depth = fabs(depth);
+#endif
+						fragmentBuffer[index].eyeNor = perspectiveCorrectNormal;
+
+						// If there is texture data, use it
+						if (primitive.v[0].dev_diffuseTex != nullptr) {
+							int texIndex = perspectiveCorrectTexcoord.x + perspectiveCorrectTexcoord.y * primitive.v[0].texWidth;
+							TextureData* texData = primitive.v[0].dev_diffuseTex;
+							fragmentBuffer[index].color = glm::vec3(texData[texIndex * 3], texData[texIndex * 3 + 1], texData[texIndex * 3 + 2]);
+						} else {
+							fragmentBuffer[index].color = glm::vec3(1.0f, 1.0f, 1.0f);
+						}
+					}
 				}
 			}
 		}
@@ -804,7 +838,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	
 	// Rasterize
 	{
-		dim3 numThreadsPerBlock(128);
+		dim3 numThreadsPerBlock(128 < totalNumPrimitives ? 128 : totalNumPrimitives);
 		dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 		_rasterize<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
 			totalNumPrimitives, 
