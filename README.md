@@ -6,7 +6,8 @@ CUDA Rasterizer
 * Xiang Deng
 * Tested on:  Windows 10-Home, i7-6700U @ 2.6GHz 16GB, GTX 1060 6GB (Personal Computer)
 
-![](imgs/milk1.gif) 
+:-------------------------:|:-------------------------: 
+![](imgs/milk1.gif) | ![](imgs/duck.gif) 
 
 ### Credits
 
