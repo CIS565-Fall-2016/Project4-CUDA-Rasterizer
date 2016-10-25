@@ -29,7 +29,6 @@ namespace {
 	typedef glm::vec3 VertexAttributeNormal;
 	typedef glm::vec2 VertexAttributeTexcoord;
 	typedef unsigned char TextureData;
-
 	typedef unsigned char BufferByte;
 
 	enum PrimitiveType{

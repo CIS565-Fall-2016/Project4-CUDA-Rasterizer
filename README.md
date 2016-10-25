@@ -15,6 +15,7 @@ CUDA Rasterizer
 	* [x] Triangle
 * [x] Texture
 	* [x] Diffuse
+	* [x] Bilinear Filtering
 * [x] Lighting
 	* [x] Lambert
 	* [x] Blinn-Phong
@@ -48,6 +49,11 @@ Mutex OFF | Mutex ON
 Perspective Correction OFF | Perspective Correction ON
 --- | ---
  ![](img/texcoord0.gif) | ![](img/texcoord1.gif)
+
+### Texture Filtering
+Nearest Neighbor | Bilinear
+--- | ---
+ ![](img/nearestneighbor.gif) | ![](img/bilinear.gif)
 
 ### Credits
 

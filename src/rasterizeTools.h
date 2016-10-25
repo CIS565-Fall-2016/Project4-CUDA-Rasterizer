@@ -133,19 +133,66 @@ glm::vec2 getVec2AtCoordinate(const glm::vec3 barycentricCoord, const glm::vec2 
 }
 
 /**
- * For a given texture data pointer, compute a color vector at spcified texcoord.
+ * For a given texture data pointer, compute color at spcified texcoord.
 */
 __host__ __device__ static
-glm::vec3 getColorFromTextureAtCoordinate(const unsigned char *pTextureData,
+glm::vec3 getColorFromTextureAtCoordinate(const unsigned char *pTex,
 		const glm::vec2 texcoord, int w, int h, int stride) {
-			int x = (int)(w * texcoord.x) % w;
+	const int x = (int)((w - 1.f) * texcoord.x + .5f);
+	const int y = (int)((h - 1.f) * texcoord.y + .5f);
 	const float scale = 1.f / 255.f;
-	int y = (int)(h * texcoord.y) % h;
-	int index = x + y * w;
+	const int index = x + y * w;
 
-	return scale * glm::vec3(pTextureData[index * stride],
-			pTextureData[index * stride + 1],
-			pTextureData[index * stride + 2]);
+	return scale * glm::vec3(pTex[index * stride],
+			pTex[index * stride + 1],
+			pTex[index * stride + 2]);
+}
+
+/**
+ * For a given texture data pointer, compute color at spcified texcoord.
+*/
+__host__ __device__ static
+glm::vec3 getColorFromTextureAtCoordinateBilinear(const unsigned char *pTex,
+		const glm::vec2 texcoord, int w, int h, int stride) {
+	const float scale = 1.f / 255.f;
+	const float x = (w - 1.f) * texcoord.x;
+	const float y = (h - 1.f) * texcoord.y;
+	const int xi = (int)x;
+	const int yi = (int)y;
+	const float ux = x - xi;
+	const float uy = y - yi;
+	glm::vec3 c00(0.f);
+	glm::vec3 c01(0.f);
+	glm::vec3 c10(0.f);
+	glm::vec3 c11(0.f);
+
+	{
+		const int index = xi + yi * w;
+		c00 = glm::vec3(pTex[index * stride],
+				pTex[index * stride + 1],
+				pTex[index * stride + 2]);
+	}
+	if (yi < h - 1) {
+		const int index = xi + (yi + 1) * w;
+		c01 = glm::vec3(pTex[index * stride],
+				pTex[index * stride + 1],
+				pTex[index * stride + 2]);
+	}
+	if (xi < w - 1) {
+		const int index = (xi + 1) + yi * w;
+		c10 = glm::vec3(pTex[index * stride],
+				pTex[index * stride + 1],
+				pTex[index * stride + 2]);
+	}
+	if (yi < h - 1 && xi < w - 1) {
+		const int index = (xi + 1) + (yi + 1) * w;
+		c11 = glm::vec3(pTex[index * stride],
+				pTex[index * stride + 1],
+				pTex[index * stride + 2]);
+	}
+
+	return scale * ((1.f - ux) * ((1.f - uy) * c00 + uy * c01)
+			+ ux * ((1.f - uy) * c10 + uy * c11));
 }
 
 /**
