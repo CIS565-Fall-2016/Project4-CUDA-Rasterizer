@@ -184,7 +184,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			glm::vec3 t10(texture[c10] / 255.f, texture[c10 + 1] / 255.f, texture[c10 + 2] / 255.f);
 			glm::vec3 t11(texture[c11] / 255.f, texture[c11 + 1] / 255.f, texture[c11 + 2] / 255.f);
 
-			framebuffer[index] = (1.f - vMin) * ((1.f - uMin) * t00 + uMin * t10) + vMin * ((1.f - uMin) * t01 + uMin * t11);
+			framebuffer[index] = ((1.f - vMin) * ((1.f - uMin) * t00 + uMin * t10) + vMin * ((1.f - uMin) * t01 + uMin * t11)) * costheta;
 			/*int uv_index = 3 * (u1 + v1 * width);
 			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
 		}
@@ -784,8 +784,7 @@ void _rasterizePrims(
 						// multiply the result of this interpolation by z, the depth
 						// of the point on the 3D triangle that the pixel overlaps.
 						float depth = (1.0f / (perspectivebarycentricCoord.x + perspectivebarycentricCoord.y + perspectivebarycentricCoord.z));
-						dev_fragmentBuffer[index].texcoord0 = glm::mat3x2(primitive.v[0].texcoord0, primitive.v[1].texcoord0, primitive.v[2].texcoord0)
-							* perspectivebarycentricCoord * depth;
+						dev_fragmentBuffer[index].texcoord0 = (perspectivebarycentricCoord.x * primitive.v[0].texcoord0 + perspectivebarycentricCoord.y *primitive.v[1].texcoord0 + perspectivebarycentricCoord.z * primitive.v[2].texcoord0) * depth;
 
 						/*dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;*/
 						
