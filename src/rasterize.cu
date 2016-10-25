@@ -612,6 +612,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 }
 
+//////////////// PIPELINE CODE ////////////////
 
 
 __global__ 
@@ -622,19 +623,17 @@ void _vertexTransformAndAssembly(
   const int width, const int height) {
 
   // vertex id
-  int vid = IDx;
-  int id = vid;
-  if (vid >= numVertices) return;
+  if (IDx >= numVertices) return;
 
-  Vertex &vertex = vertexParts.dev_vertices[vid];
+  Vertex &vertex = vertexParts.dev_vertices[IDx];
 
   // Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
   // Then divide the pos by its w element to transform into NDC space
   // Finally transform x and y to viewport space
   // TODO: Apply vertex transformation here
-  glm::vec4 modelPos = glm::vec4(vertexParts.dev_pos[vid], 1); // this is in model space
+  glm::vec4 modelPos = glm::vec4(vertexParts.dev_pos[IDx], 1); // this is in model space
   vertex.viewPos = glm::vec3(MV * modelPos);
-  vertex.viewNor = glm::vec3(MV_normal * vertexParts.dev_normal[vid]);
+  vertex.viewNor = glm::vec3(MV_normal * vertexParts.dev_normal[IDx]);
   glm::vec4 clipPos(MVP * modelPos);
   glm::vec4 screenDims(width, height, 1, 1);
   vertex.pos = screenDims * (clipPos + glm::vec4(1, 1, 0, 0)) / clipPos.w; // HELP: what is the fourth dimension for?
@@ -652,18 +651,16 @@ __global__
 void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, VertexParts vertexParts) {
 
   // index id
-  int iid = IDx;
-
-  if (iid < numIndices) {
+  if (IDx < numIndices) {
 
     // TODO: uncomment the following code for a start
      //This is primitive assembly for triangles
 
     int pid;	// id for cur primitives vector
     if (vertexParts.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-    	pid = iid / (int)vertexParts.primitiveType;
-    	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)vertexParts.primitiveType]
-    		= vertexParts.dev_vertices[vertexParts.dev_indices[iid]];
+    	pid = IDx / (int)vertexParts.primitiveType;
+    	dev_primitives[pid + curPrimitiveBeginId].v[IDx % (int)vertexParts.primitiveType]
+    		= vertexParts.dev_vertices[vertexParts.dev_indices[IDx]];
     }
     int id = IDx; //START HERE
 
@@ -726,29 +723,32 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
 
   //__syncthreads(); // wait for all depths to be updated
 
-  range(i, 0, height) {
-    range(j, 0, width) { 
-      int index = getIndex(i, j, width);
-  //    glm::vec2 viewPos = glm::vec2(i, j);
-  //    glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
-  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
+  range(i, 0, height / 1.5) {
+    range(j, 0, width / 1.5) { 
+      int index = getIndex(i, j, width); // up to (height - 1) * width + (width - 1) = height * width - 1
+	  if (index >= 0 && index < height * width) {
+		  //    glm::vec2 viewPos = glm::vec2(i, j);
+		  //    glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+		  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
 
-  //      int depth = getFragmentDepth(i, j, tri);
-  //      if (depth == depths[index]) {
-          Fragment &fragment = fragments[index];
-  //        //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
+		  //      int depth = getFragmentDepth(i, j, tri);
+		  //      if (depth == depths[index]) {
+		  Fragment &fragment = fragments[height * width - 1];
+		  //        //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-  //        fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-  //        fragment.viewNor = primitive.v[0].viewNor;
-  //        fragment.viewPos = glm::vec3(viewPos, depth);
+		  //        fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+		  //        fragment.viewNor = primitive.v[0].viewNor;
+		  //        fragment.viewPos = glm::vec3(viewPos, depth);
 
-  //        //fragment.viewPos = vertex.eyePos;
-  //        //fragment.texcoord0 = vertex.texcoord0;
+		  //        //fragment.viewPos = vertex.eyePos;
+		  //        //fragment.texcoord0 = vertex.texcoord0;
 
-  //        ////TODO: get rid of this
-          fragment.color = glm::vec3(1.0f);
+		  //        ////TODO: get rid of this
+		  fragment.color = glm::vec3(1.0f);
+		  //int id = IDx;
+		  //debug0("WTF: index=%d\n ", index);
   //      }
-  //    }
+      }
     }
   }
 }
@@ -761,7 +761,7 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
     int index = IDx + (IDy * w);
 
     if (IDx >= w || IDy >= h) return;
-	framebuffer[index] = glm::vec3(1.0f); // fragmentBuffer[index].color;
+	framebuffer[index] = fragmentBuffer[index].color;
 }
 
 /**

@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+	cout << "Loading " << argv[1] << endl;
 	tinygltf::Scene scene;
 	tinygltf::TinyGLTFLoader loader;
 	std::string err;
