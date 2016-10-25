@@ -22,6 +22,7 @@ CUDA Rasterizer
 * [x] Normal Visualization
 * [x] Depth Visualization
 * [x] Depth Test with Mutex
+* [x] Perspective Corrected Texcoord
 
 ## Overview
 
@@ -32,6 +33,10 @@ Texture | Normal | Depth | Texcoord
 Lambert | Blinn
 --- | ---
  ![](img/cover_lambert.gif) |  ![](img/cover_lambert.gif)
+
+Perspective Correction OFF | Perspective Correction ON
+--- | ---
+ ![](img/texcoord0.gif) |  ![](img/texcoord1.gif)
 
 ### Credits
 
