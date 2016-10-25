@@ -144,19 +144,6 @@ void _sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
     }
 }
 
-/** 
-* Writes fragment colors to the framebuffer
-*/
-__global__
-void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
-	int x = IDx;
-	int y = IDy;
-    int index = x + (y * w);
-
-    if (x >= w || y >= h) return;
-	framebuffer[index] = fragmentBuffer[index].color;
-}
-
 /**
  * Called once at the beginning of the program to allocate memory.
  */
@@ -193,6 +180,7 @@ void _initDepth(int w, int h, int *depth)
 * kern function with support for stride to sometimes replace cudaMemcpy
 * One thread is responsible for copying one component
 */
+
 __global__ 
 void _deviceBufferCopy(
 int N, BufferByte* dev_dst, const BufferByte* dev_src, 
@@ -685,15 +673,6 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __device__
-glm::vec3 intersect(glm::vec3 vector, glm::mat3 plane) {
-  glm::vec3 x = glm::inverse(plane) * vector;
-  float t = 1 / glm::dot(x, glm::vec3(1.0f));
-  return t * vector;
-}
-
-
-
-__device__
 int getFragmentDepth(int x, int y, glm::vec3 tri[3]) {
 
   // test if fragment is in primitive
@@ -729,49 +708,60 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
     tri[i] = glm::vec3(primitive.v[i].pos);
   }
 
-  range(i, 0, height) { 
-    range(j, 0, width) {
-      int index = getIndex(i, j, width);
+  //range(i, 0, height) { 
+  //  range(j, 0, width) {
+  //    int index = getIndex(i, j, width);
 
-		  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
-        int depth = getFragmentDepth(i, j, tri);
+		//  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
+  //      int depth = getFragmentDepth(i, j, tri);
 
-        // assign fragEyePos.z to dev_depth[i] iff it is smaller 
-        // (fragment is closer to camera)
-        int index = getIndex(i, j, width);
-        atomicMin(depths + index, depth);
-      }
-    }
-  }
+  //      // assign fragEyePos.z to dev_depth[i] iff it is smaller 
+  //      // (fragment is closer to camera)
+  //      int index = getIndex(i, j, width);
+  //      atomicMin(depths + index, depth);
+  //    }
+  //  }
+  //}
 
-  __syncthreads(); // wait for all depths to be updated
+  //__syncthreads(); // wait for all depths to be updated
 
   range(i, 0, height) {
     range(j, 0, width) { 
       int index = getIndex(i, j, width);
-      glm::vec2 viewPos = glm::vec2(i, j);
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
+  //    glm::vec2 viewPos = glm::vec2(i, j);
+  //    glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
 
-        int depth = getFragmentDepth(i, j, tri);
-        if (depth == depths[index]) {
+  //      int depth = getFragmentDepth(i, j, tri);
+  //      if (depth == depths[index]) {
           Fragment &fragment = fragments[index];
-          //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
+  //        //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-          fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-          fragment.viewNor = primitive.v[0].viewNor;
-          fragment.viewPos = glm::vec3(viewPos, depth);
+  //        fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+  //        fragment.viewNor = primitive.v[0].viewNor;
+  //        fragment.viewPos = glm::vec3(viewPos, depth);
 
-          //fragment.viewPos = vertex.eyePos;
-          //fragment.texcoord0 = vertex.texcoord0;
+  //        //fragment.viewPos = vertex.eyePos;
+  //        //fragment.texcoord0 = vertex.texcoord0;
 
-          ////TODO: get rid of this
+  //        ////TODO: get rid of this
           fragment.color = glm::vec3(1.0f);
-        }
-      }
+  //      }
+  //    }
     }
   }
+}
+
+/** 
+* Writes fragment colors to the framebuffer
+*/
+__global__
+void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+    int index = IDx + (IDy * w);
+
+    if (IDx >= w || IDy >= h) return;
+	framebuffer[index] = glm::vec3(1.0f); // fragmentBuffer[index].color;
 }
 
 /**
