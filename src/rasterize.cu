@@ -24,6 +24,7 @@
 #define SEPARATE_INTERP
 #define OPTIM_BARY // https://fgiesen.wordpress.com/2013/02/10/optimizing-the-basic-rasterizer/
 //#define RASTERIZE_BY_PIXEL
+#define TILE_SIZE 32
 
 namespace {
 
@@ -122,6 +123,7 @@ static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
+static unsigned int * dev_mutex = NULL;
 
 #ifdef CONSTANT_MEM
 __constant__ float c_MVP[sizeof(glm::mat4) / sizeof(float)];
@@ -256,6 +258,10 @@ void rasterizeInit(int w, int h) {
     
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
+
+  cudaFree(dev_mutex);
+  cudaMalloc(&dev_mutex, width * height * sizeof(unsigned int));
+  cudaMemset(dev_mutex, 0, width * height * sizeof(unsigned int));
 
 	checkCUDAError("rasterizeInit");
 }
@@ -742,7 +748,7 @@ PrimitiveDevBufPointers primitive) {
     // Assemble all attribute arraies into the primitive array
     primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.f));
     primitive.dev_verticesOut[vid].eyeNor = MV_normal * primitive.dev_normal[vid];
-    primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
+    if (primitive.dev_texcoord0) primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
   }
 }
 
@@ -836,9 +842,35 @@ void _rasterizeByPixel(int numPrimitives, Primitive* primitives, Fragment* fragm
 }
 
 __global__
-void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Primitive** prims, int width, int height) {
+#if TILE_SIZE > 0
+void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, unsigned int* mutexes, Primitive** prims) {
+#else
+void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Primitive** prims) {
+#endif
     // primitive id
+#if TILE_SIZE > 0
+    // Apparently shared atomics are bad
+    // https://devtalk.nvidia.com/default/topic/514085/atomicadd-in-shared-memory-is-measured-slower-than-in-global-memory-timing-shared-memory-atomic-o/
+    // or apparently they're fast?
+    // https://devblogs.nvidia.com/parallelforall/gpu-pro-tip-fast-histograms-using-shared-atomics-maxwell/
+    //__shared__ int s_depths[TILE_SIZE*TILE_SIZE];
+    //__shared__ Primitive* s_prims[TILE_SIZE*TILE_SIZE];
+    //int tx = (blockIdx.x * blockDim.x);// +threadIdx.x;
+    //int ty = (blockIdx.y * blockDim.y);// +threadIdx.y;
+    int tx = blockIdx.y;
+    int ty = blockIdx.z;
     int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+    /*for (int i = TILE_SIZE * TILE_SIZE * (float)threadIdx.x / blockDim.x; 
+        i < TILE_SIZE * TILE_SIZE * (float)(threadIdx.x + 1) / blockDim.x; 
+        ++i) {
+      //s_depths[i] = INT_MAX;
+      s_prims[i] = NULL;
+    }
+    __syncthreads();*/
+#else
+    int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+#endif
     if (pid < numPrimitives) {
       Primitive &prim = primitives[pid];
 
@@ -854,11 +886,27 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Prim
       AABB box = getAABBForTriangle(triangle);
 #endif
 
+      // discard if completely outside
+#if TILE_SIZE > 0
+      //if (box.max.x < tx*TILE_SIZE || box.min.x > (tx + 1) * TILE_SIZE || box.min.x > c_width[0] ||
+      //    box.max.y < ty*TILE_SIZE || box.min.y > (ty + 1) * TILE_SIZE || box.min.y > c_height[0]) return;
+#else
+      if (box.max.x < 0 || box.min.x > c_width[0] || 
+          box.max.y < 0 || box.min.y > c_height[0]) return;
+#endif
+
       // clip bbox to screen
+#if TILE_SIZE > 0
+      box.min.x = __max(box.min.x, tx*TILE_SIZE);
+      box.max.x = __min(__min(box.max.x, (tx + 1) * TILE_SIZE), c_width[0]);
+      box.min.y = __max(box.min.y, ty*TILE_SIZE);
+      box.max.y = __min(__min(box.max.y, (ty + 1) * TILE_SIZE), c_height[0]);
+#else
       box.min.x = __max(box.min.x, 0);
-      box.max.x = __min(box.max.x, width);
+      box.max.x = __min(box.max.x, c_width[0]);
       box.min.y = __max(box.min.y, 0);
-      box.max.y = __min(box.max.y, height);
+      box.max.y = __min(box.max.y, c_height[0]);
+#endif
 
 #ifdef OPTIM_BARY
       float A01 = v0.y - v1.y, B01 = v1.x - v0.x;
@@ -878,13 +926,37 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Prim
 
         for (p.x = box.min.x; p.x <= box.max.x; p.x++) {
           if (w0 >= 0 && w1 >=0 && w2 >= 0) {
-            int pix_idx = p.x + p.y * width;
+#if TILE_SIZE > 0
             int intz = INT_MAX * (w0 * prim.v[0].pos.z + w1 * prim.v[1].pos.z + w2 * prim.v[2].pos.z) / (w0 + w1 + w2);
+            int pix_idx = p.x + p.y * c_width[0];
+            unsigned int* mutex = &mutexes[pix_idx];
+            bool isSet = 0;
+            do {
+              if (isSet = atomicCAS(mutex, 0, 1) == 0) {
+                if (intz < depths[pix_idx]) {
+                  depths[pix_idx] = intz;
+                  prims[pix_idx] = &prim;
+                }
+              }
+              if (isSet) {
+                *mutex = 0;
+              }
+            } while (!isSet);
+            //atomicMin((int*)&(s_depths[pix_idx]), intz);
+            //atomicMin(&depths[pix_idx], intz);
+            //int t_idx = ((p.x - tx*TILE_SIZE) + (p.y - ty*TILE_SIZE) * TILE_SIZE);
+            //if (depths[pix_idx] == intz) {
+            //  prims[pix_idx] = &prim;
+              //s_prims[t_idx] = &prim;
+            //}
+#else
+            int intz = INT_MAX * (w0 * prim.v[0].pos.z + w1 * prim.v[1].pos.z + w2 * prim.v[2].pos.z) / (w0 + w1 + w2);
+            int pix_idx = p.x + p.y * c_width[0];
             atomicMin(&depths[pix_idx], intz);
             if (depths[pix_idx] == intz) {
               prims[pix_idx] = &prim;
-              //fragments[pix_idx].prim = &prim;
             }
+#endif
           }
 
           w0 += A12;
@@ -913,6 +985,15 @@ void _rasterizePrims(int numPrimitives, Primitive* primitives, int* depths, Prim
       }
 #endif
     }
+#if TILE_SIZE > 0
+    //__syncthreads();
+   // for (int i = 0; i < stride + 1; ++i) {
+   //   int g_idx = TILE_SIZE * (blockIdx.y * blockDim.y + blockIdx.z * blockDim.y * blockDim.z);
+   //   if (g_idx + i >= c_width[0] * c_height[0] || threadIdx.x * stride + i >= TILE_SIZE*TILE_SIZE) break;
+      //depths[g_idx + i] = s_depths[threadIdx.x * stride + i];
+      //prims[g_idx + i] = s_prims[threadIdx.x * stride + i];
+    //}
+#endif
 }
 
 __global__
@@ -1052,8 +1133,7 @@ void _rasterize(int numPrimitives, Primitive* primitives, int* depths, Fragment*
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
-    dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
-		(height - 1) / blockSize2d.y + 1);
+    dim3 blockCount2d((width  - 1) / blockSize2d.x + 1, (height - 1) / blockSize2d.y + 1);
 
 	// Execute your rasterization pipeline here
 	// (See README for rasterization pipeline outline.)
@@ -1114,9 +1194,17 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   _rasterizeByPixel<<<blockCount2d, blockSize2d>>>(totalNumPrimitives, dev_primitives, dev_fragmentBuffer, width, height);
   END_PROFILE(rasterize_pixels)
 #else
+#if TILE_SIZE > 0
+  dim3 tileSize(128);
+  dim3 tileBlocks((totalNumPrimitives + tileSize.x - 1) / tileSize.x, (width - 1) / TILE_SIZE + 1, (height - 1) / TILE_SIZE + 1);
+  START_PROFILE(rasterize_prims_tiled)
+  _rasterizePrims << <tileBlocks, tileSize >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_mutex, dev_primitiveBuffer);
+  END_PROFILE(rasterize_prims_tiled)
+#else
   START_PROFILE(rasterize_prims)
-  _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_primitiveBuffer, width, height);
+  _rasterizePrims << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, dev_depth, dev_primitiveBuffer);
   END_PROFILE(rasterize_prims)
+#endif
 #endif
   START_PROFILE(interpolate)
   _interpolateAttributes << <blockCount2d, blockSize2d >> >(dev_fragmentBuffer, dev_primitiveBuffer, width, height);
