@@ -29,6 +29,7 @@
 #define DEBUG 1
 #define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
 #define debug0(...) if (DEBUG == 1 && id == 0) { printf (__VA_ARGS__); }
+#define debugDuck(...) if (DEBUG == 1 && id == 36105) { printf (__VA_ARGS__); }
 #define range(i, start, stop) for (i = start; i < stop; i++)
 
 namespace {
@@ -105,6 +106,8 @@ namespace {
     Vertex* dev_vertices;
 
     // TODO: add more attributes when needed
+    int texWidth;
+    int texHeight;
   };
 
 }
@@ -241,7 +244,7 @@ glm::mat4 getMatrixFromNodeMatrixVector(const tinygltf::Node & n) {
     }
   } else {
     // no matrix, use rotation, scale, translation
-
+ 
     if (n.translation.size() > 0) {
       curMatrix[3][0] = n.translation[0];
       curMatrix[3][1] = n.translation[1];
@@ -514,6 +517,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
           // You can only worry about this part once you started to 
           // implement textures for your rasterizer
           TextureData* dev_diffuseTex = NULL;
+          int texWidth, texHeight;
           if (!primitive.material.empty()) {
             const tinygltf::Material &mat = scene.materials.at(primitive.material);
             printf("material.name = %s\n", mat.name.c_str());
@@ -530,6 +534,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
                   
                   // TODO: store the image size to your PrimitiveDevBufPointers
+                  texWidth = image.width;
+                  texHeight = image.height;
                   // image.width;
                   // image.height;
 
@@ -538,7 +544,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
               }
             }
 
-            // TODO: write your code for other materails
+            // TODO: write your code for other materials
             // You may have to take a look at tinygltfloader
             // You can also use the above code loading diffuse material as a start point 
           }
@@ -573,7 +579,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
             dev_diffuseTex,
 
-            dev_vertex  //VertexOut
+            dev_vertex,  //VertexOut
+            texWidth,
+            texHeight
           });
 
           totalNumPrimitives += numPrimitives;
@@ -635,7 +643,7 @@ void _vertexTransformAndAssembly(
   vertex.viewNor = glm::vec3(MV_normal * vertexParts.dev_normal[IDx]);
   glm::vec4 clipPos(MVP * modelPos);
   glm::vec4 screenDims(width, height, 1, 1);
-  vertex.pos = screenDims * (clipPos + glm::vec4(1, 1, 0, 0)) / clipPos.w; // HELP: what is the fourth dimension for?
+  vertex.pos = screenDims * (clipPos / clipPos.w + glm::vec4(1, 1, 0, 0)) / 2.0f;
 
   // Assemble all attribute arrays into the primitive array
   //vertex.texcoord0 = vertexParts.dev_texcoord0[vid];
@@ -723,21 +731,23 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
           Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
           //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-          int k;
-          fragment.viewPos = glm::vec3(0);
+          fragment.viewNor = glm::vec3(0);
           fragment.texcoord0 = glm::vec2(0);
+          fragment.color = glm::vec3(0);
+          int k;
           range(k, 0, 3) {
             float weight = barycentricCoord[k];
             Vertex v = primitive.v[k];
-            fragment.viewPos += weight * v.viewNor;
+            fragment.viewNor += weight * v.viewNor;
             fragment.texcoord0 += weight * v.texcoord0;
           }
 
           //fragment.viewNor = primitive.v[0].viewNor;
           fragment.viewPos = glm::vec3(viewPos, depth);
 
-          // TODO: get rid of:
-          fragment.color = glm::vec3(1.0f);
+          int texIndex = getIndex(fragment.texcoord0.y, fragment.texcoord0.x, p
+          unsigned char tex = primitive.dev_diffuseTex[
+          fragment.color = glm::vec3(1);
         }
       }
     }
@@ -749,10 +759,26 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
 */
 __global__
 void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
-    int index = IDx + (IDy * w);
-
-    if (IDx >= w || IDy >= h) return;
-	framebuffer[index] = fragmentBuffer[index].color;
+  if (IDx >= w || IDy >= h) return;
+  int index = IDx + (IDy * w);
+  Fragment frag = fragmentBuffer[index];
+  glm::vec3 lightPos(0);
+  glm::vec3 L = glm::normalize(glm::vec3(0, 1, 1));//lightPos - frag.viewPos);
+  glm::vec3 V = glm::normalize(-frag.viewPos);
+  glm::vec3 H = glm::normalize(L + V);
+  //glm::vec3
+  float preclamp = glm::dot(frag.viewNor, H);
+  float intensity = saturate(glm::dot(frag.viewNor, H)) + 0.1;
+  int id = index;
+  //debugDuck("preclamp=%f frag.viewNor=%f,%f,%f H=%f,%f,%f\n", 
+  //  preclamp,
+  //  frag.viewNor.x,
+  //  frag.viewNor.y,
+  //  frag.viewNor.z,
+  //  H.x,
+  //  H.y,
+  //  H.z);
+	framebuffer[index] = intensity * frag.color;
 }
 
 /**
