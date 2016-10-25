@@ -11,7 +11,7 @@ CUDA Rasterizer
 ## Features
 * [ ] Primitive
 	* [ ] Point
-	* [ ] Line
+	* [x] Line
 	* [x] Triangle
 * [ ] Texture
 	* [x] Diffuse
@@ -33,17 +33,22 @@ Texture | Normal | Depth | Texcoord
 ### Lighting
 Lambert | Blinn-Phong
 --- | ---
- ![](img/cover_lambert.gif) |  ![](img/cover_blinnphong.gif)
+ ![](img/cover_lambert.gif) | ![](img/cover_blinnphong.gif)
+
+### Rasterization Mode
+Point | Wireframe | Solid
+--- | --- | ---
+ ![](img/dummy.gif) | ![](img/line.gif) | ![](img/triangle.gif)
 
 ### Depth Test with Mutex
 Mutex OFF | Mutex ON
 --- | ---
- ![](img/mutex_off.gif) |  ![](img/mutex_on.gif)
+ ![](img/mutex_off.gif) | ![](img/mutex_on.gif)
 
 ### Texcoord Correction
 Perspective Correction OFF | Perspective Correction ON
 --- | ---
- ![](img/texcoord0.gif) |  ![](img/texcoord1.gif)
+ ![](img/texcoord0.gif) | ![](img/texcoord1.gif)
 
 ### Credits
 

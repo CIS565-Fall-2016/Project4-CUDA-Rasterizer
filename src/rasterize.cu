@@ -18,6 +18,10 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define TRIANGLE 1
+#define LINE 1
+#define POINT 1
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -159,7 +163,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	buffer = glm::vec3(0.f);
 	// buffer = fragment.eyeNor; return;// display normal
 	// buffer = glm::vec3(fragment.texcoord0, 0.f); return;// display texcoord
-
+#if TRIANGLE
 	if (fragment.dev_diffuseTex != NULL) {
 		const glm::vec3 diffuseColor = getColorFromTextureAtCoordinate(
 				fragment.dev_diffuseTex, fragment.texcoord0, fragment.diffuseTexWidth,
@@ -175,6 +179,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		// Blinn-Phong
 		buffer += glm::vec3(pow(max(0.f, glm::dot(N, H)), 200.f));
 	}
+#elif LINE
+	buffer = fragment.color;
+#endif
 }
 
 /**
@@ -739,33 +746,33 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 	}
 
 	const Primitive &primitive = dev_primitives[idx];
+	const glm::vec3 tri[3] = {
+		glm::vec3(primitive.v[0].pos),
+		glm::vec3(primitive.v[1].pos),
+		glm::vec3(primitive.v[2].pos),
+	};
+	const glm::vec3 eyePos[3] = {
+		primitive.v[0].eyePos,
+		primitive.v[1].eyePos,
+		primitive.v[2].eyePos
+	};
+	const glm::vec3 eyeNor[3] = {
+		primitive.v[0].eyeNor,
+		primitive.v[1].eyeNor,
+		primitive.v[2].eyeNor
+	};
+	const glm::vec2 texcoord0[3] = {
+		primitive.v[0].texcoord0,
+		primitive.v[1].texcoord0,
+		primitive.v[2].texcoord0
+	};
+	const float triDepth_1[3] = {
+		1.f / tri[0].z,
+		1.f / tri[1].z,
+		1.f / tri[2].z
+	};
 
 	if (primitive.primitiveType == Triangle) {
-		const glm::vec3 tri[3] = {
-			glm::vec3(primitive.v[0].pos),
-			glm::vec3(primitive.v[1].pos),
-			glm::vec3(primitive.v[2].pos),
-		};
-		const glm::vec3 eyePos[3] = {
-			primitive.v[0].eyePos,
-			primitive.v[1].eyePos,
-			primitive.v[2].eyePos
-		};
-		const glm::vec3 eyeNor[3] = {
-			primitive.v[0].eyeNor,
-			primitive.v[1].eyeNor,
-			primitive.v[2].eyeNor
-		};
-		const glm::vec2 texcoord0[3] = {
-			primitive.v[0].texcoord0,
-			primitive.v[1].texcoord0,
-			primitive.v[2].texcoord0
-		};
-		const float triDepth_1[3] = {
-			1.f / tri[0].z,
-			1.f / tri[1].z,
-			1.f / tri[2].z
-		};
 		TextureData *pDiffuseTexData = primitive.v[0].dev_diffuseTex;
 		int diffuseTexWidth = 0;
 		int diffuseTexHeight = 0;
@@ -826,9 +833,8 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				// occluded
 				if (isOccluded) continue;
 
-				// assemble fragment attributes
 				Fragment &fragment = dev_fragmentBuffer[pixelId];
-
+				// assemble fragment attributes
 				fragment.eyePos = getVec3AtCoordinate(baryCoord, eyePos);
 				fragment.eyeNor = glm::normalize(getVec3AtCoordinate(baryCoord, eyeNor));
 				// fragment.texcoord0 = getVec2AtCoordinate(baryCoord, texcoord0);
@@ -845,10 +851,55 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				}
 			}
 		}
-	} else if (primitive.primitiveType == Line){
+	}
+}
 
-	} else if (primitive.primitiveType == Point) {
+__host__ __device__
+void _rasterizeLineHelper(const glm::vec3 &a, const glm::vec3 &b,
+		Fragment *dev_fragmentBuffer, int *dev_depth, int w, int h) {
+	const int left = max(0, (int)min(a.x, b.x));
+	const int right = min(w, (int)max(a.x, b.x) + 1);
+	const int bottom = max(0, (int)min(a.y, b.y));
+	const int top = min(h, (int)max(a.y, b.y) + 1);
 
+	// outsides window
+	if (left >= right && bottom >= top) return;
+
+	int begin = right - left >= top - bottom ? left : bottom;
+	int end = right - left >= top - bottom ? right : top;
+
+	for (int i = 0; i <= end - begin; ++i) {
+		const glm::vec3 p = getVec3AtU((i + 0.f) / (end - begin), a, b);
+		const int index = (int)p.x + (int)p.y * w;
+		const int depth = (int)(p.z * INT_MAX);
+
+		if (dev_depth[index] <= depth) continue;
+		dev_depth[index] = depth;
+
+		Fragment &fragment = dev_fragmentBuffer[index];
+
+		fragment.color = glm::vec3(1.f);
+	}
+}
+
+__global__
+void _rasterizeLine(int totalNumPrimitives, Primitive *dev_primitives,
+		Fragment *dev_fragmentBuffer, int *dev_depth, int w, int h) {
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (idx >= totalNumPrimitives) {
+		return;
+	}
+
+	const Primitive &primitive = dev_primitives[idx];
+	const glm::vec3 &v0 = glm::vec3(primitive.v[0].pos);
+	const glm::vec3 &v1 = glm::vec3(primitive.v[1].pos);
+	const glm::vec3 &v2 = glm::vec3(primitive.v[2].pos);
+
+	if (primitive.primitiveType == Triangle) {
+		_rasterizeLineHelper(v0, v1, dev_fragmentBuffer, dev_depth, w, h);
+		_rasterizeLineHelper(v1, v2, dev_fragmentBuffer, dev_depth, w, h);
+		_rasterizeLineHelper(v2, v0, dev_fragmentBuffer, dev_depth, w, h);
 	}
 }
 
@@ -904,10 +955,15 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
 	dim3 numThreadsPerBlock(128);
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1)
 			/ numThreadsPerBlock.x);
-
+#if TRIANGLE
 	_rasterizePrimitive<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
 			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
 			width, height, dev_mutex);
+#elif LINE
+	_rasterizeLine<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
+			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
+			width, height);
+#endif
 	checkCUDAError("rasterize primitive");
     // Copy depthbuffer colors into framebuffer
 	render<<<blockCount2d, blockSize2d>>>(width, height, dev_fragmentBuffer,

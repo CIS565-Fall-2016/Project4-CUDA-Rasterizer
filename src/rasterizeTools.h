@@ -165,3 +165,11 @@ glm::vec2 getPerspectiveCorrectedTexcoordAtCoordinate(const glm::vec3 baryCoord,
 
 	return numerator / denomenator;
 }
+
+/**
+ * Linear interpolate between 2 points.
+ */
+__host__ __device__ static
+glm::vec3 getVec3AtU(const float u, const glm::vec3 &a, const glm::vec3 &b) {
+	return (1.f - u) * a + u * b;
+}
