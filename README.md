@@ -9,13 +9,12 @@ CUDA Rasterizer
 * Tested on: Windows 10, i7-6700HQ @ 2.6GHz 2.6GHz 8GB, GTX 960M (Personal Laptop)
 
 ## Features
-* [ ] Primitive
-	* [ ] Point
+* [x] Primitive
+	* [x] Point
 	* [x] Line
 	* [x] Triangle
-* [ ] Texture
+* [x] Texture
 	* [x] Diffuse
-	* [ ] Normal Map
 * [x] Lighting
 	* [x] Lambert
 	* [x] Blinn-Phong
