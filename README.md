@@ -16,24 +16,26 @@ CUDA Rasterizer
 * [ ] Texture
 	* [x] Diffuse
 	* [ ] Normal Map
-* [ ] Lighting
+* [x] Lighting
 	* [x] Lambert
-	* [ ] Blinn
+	* [x] Blinn-Phong
 * [x] Normal Visualization
 * [x] Depth Visualization
 * [x] Depth Test with Mutex
 * [x] Perspective Corrected Texcoord
 
 ## Overview
-
+### Basic Attributes
 Texture | Normal | Depth | Texcoord
 --- | --- | --- | ---
 ![](img/cover_diffuse.gif) | ![](img/cover_normal.gif) | ![](img/cover_depth.gif) | ![](img/cover_texcoord.gif)
 
-Lambert | Blinn
+### Lighting
+Lambert | Blinn-Phong
 --- | ---
- ![](img/cover_lambert.gif) |  ![](img/cover_lambert.gif)
+ ![](img/cover_lambert.gif) |  ![](img/cover_blinnphong.gif)
 
+### Texcoord Correction
 Perspective Correction OFF | Perspective Correction ON
 --- | ---
  ![](img/texcoord0.gif) |  ![](img/texcoord1.gif)

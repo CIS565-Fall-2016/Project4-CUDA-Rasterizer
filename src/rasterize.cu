@@ -139,7 +139,7 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 }
 
 /**
-* Writes fragment colors to the framebuffer
+* Writes fragment colors to the framebuffer, serve as a fragment shader
 */
 __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
@@ -164,11 +164,16 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		const glm::vec3 diffuseColor = getColorFromTextureAtCoordinate(
 				fragment.dev_diffuseTex, fragment.texcoord0, fragment.diffuseTexWidth,
 				fragment.diffuseTexHeight, fragment.diffuseTexStride);
-		const float LdotN = glm::dot(glm::normalize(lightPos - fragment.eyePos),
-				fragment.eyeNor);
+		const glm::vec3 L = glm::normalize(lightPos - fragment.eyePos);
+		const glm::vec3 &N = fragment.eyeNor;
+		const glm::vec3 V = glm::normalize(-fragment.eyePos);
+		const glm::vec3 H = glm::normalize(V + L);
 
-		// lambert diffuse
-		buffer = max(0.f, LdotN) * diffuseColor;
+		// lambert
+		buffer = max(0.f, glm::dot(L, N)) * diffuseColor;
+
+		// Blinn-Phong
+		buffer += glm::vec3(pow(max(0.f, glm::dot(N, H)), 200.f));
 	}
 }
 
@@ -797,9 +802,9 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				// too far or too near
 				if (z < 0.f || z > 1.f) continue;
 
+				// depth test, account for race condition when accessing depth buffer
 				const int depth = (int)(z * INT_MAX);
 				bool isOccluded = true;
-				// depth test, consider race condition when accessing depth buffer
 				bool isSet = false;
 				while (!isSet) {
 					isSet = atomicCAS(&dev_mutex[pixelId], 0, 1) == 0;
