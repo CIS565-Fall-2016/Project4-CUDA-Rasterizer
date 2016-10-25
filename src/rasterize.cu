@@ -654,6 +654,8 @@ void _vertexTransformAndAssembly(
 
 static int curPrimitiveBeginId = 0;
 
+// START HERE: figure out where to put texture info
+
 __global__
 void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, VertexParts vertexParts) {
 
