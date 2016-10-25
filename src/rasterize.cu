@@ -54,15 +54,15 @@ namespace {
     // The attributes listed below might be useful, 
     // but always feel free to modify on your own
 
-     glm::vec3 viewPos;  // eye space position used for shading
-     glm::vec3 viewNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
+    glm::vec3 viewPos;  // eye space position used for shading
+    glm::vec3 viewNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
     // glm::vec3 col;
+    glm::vec2 texcoord0;
   };
 
   struct Primitive {
     PrimitiveType primitiveType = Triangle; // C++ 11 init
     Vertex v[3];
-    glm::vec2 texcoord0;
     TextureData* dev_diffuseTex = NULL;
     // int texWidth, texHeight;
     // ...
@@ -119,7 +119,6 @@ static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
-
 static int *dev_depth = NULL;  // you might need this buffer when doing depth test
 
 /**
@@ -670,26 +669,16 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __device__
-int getFragmentDepth(int x, int y, glm::vec3 tri[3]) {
+float getFragmentDepth(glm::vec3 bcCoord, glm::vec3 tri[3]) {
+  // get depth of fragment represented as an integer
+  int i;
+  float depth = 0;
 
-  // test if fragment is in primitive
-  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
-  if (isBarycentricCoordInBounds(barycentricCoord)) {
-    // fragment is in primitive
-
-    // get depth of fragment represented as an integer
-    int i;
-    float depth = 0;
-    range(i, 0, 3) {
-      glm::vec3 weighted = barycentricCoord[i] * tri[i];
-      depth += weighted.z;
-    }
-    return depth > MAX_DEPTH ? INT_MAX : (int)(depth * DEPTH_QUANTUM);
+// interpolate vertex depths
+  range(i, 0, 3) {
+    depth += bcCoord[i] * tri[i].z;
   }
-  else {
-    return INT_MAX;
-  }
-
+  return depth > MAX_DEPTH ? INT_MAX : depth * DEPTH_QUANTUM;
 }
 
 __global__
@@ -705,49 +694,51 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
     tri[i] = glm::vec3(primitive.v[i].pos);
   }
 
-  //range(i, 0, height) { 
-  //  range(j, 0, width) {
-  //    int index = getIndex(i, j, width);
+  range(i, 0, height) { 
+    range(j, 0, width) {
+      int index = getIndex(i, j, width);
+      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+      if (isBarycentricCoordInBounds(barycentricCoord)) {
+        int depth = getFragmentDepth(barycentricCoord, tri);
 
-		//  glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
-  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
-  //      int depth = getFragmentDepth(i, j, tri);
+        // assign fragEyePos.z to dev_depth[i] iff it is smaller 
+        // (fragment is closer to camera)
+        int index = getIndex(i, j, width);
+        atomicMin(depths + index, depth);
+      }
+    }
+  }
 
-  //      // assign fragEyePos.z to dev_depth[i] iff it is smaller 
-  //      // (fragment is closer to camera)
-  //      int index = getIndex(i, j, width);
-  //      atomicMin(depths + index, depth);
-  //    }
-  //  }
-  //}
+  __syncthreads(); // wait for all depths to be updated
 
-  //__syncthreads(); // wait for all depths to be updated
-
-  range(i, 0, height / 1.5) {
-    range(j, 0, width / 1.5) { 
+  range(i, 0, height - 100) {
+    range(j, 0, width - 100) { 
       int index = getIndex(i, j, width); // up to (height - 1) * width + (width - 1) = height * width - 1
-	  if (index >= 0 && index < height * width) {
-		  //    glm::vec2 viewPos = glm::vec2(i, j);
-		  //    glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
-		  //    if (isBarycentricCoordInBounds(barycentricCoord)) {
+      glm::vec2 viewPos = glm::vec2(i, j);
+      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+      if (isBarycentricCoordInBounds(barycentricCoord)) {
+        float depth = getFragmentDepth(barycentricCoord, tri);
+        if ((int)depth == depths[index]) {
+          Fragment &fragment = fragments[index];
+          Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-		  //      int depth = getFragmentDepth(i, j, tri);
-		  //      if (depth == depths[index]) {
-		  Fragment &fragment = fragments[height * width - 1];
-		  //        //Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
+          //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+          int k;
+          fragment.viewPos = glm::vec3(0);
+          fragment.texcoord0 = glm::vec2(0);
+          range(k, 0, 3) {
+            float weight = barycentricCoord[k];
+            Vertex v = primitive.v[k];
+            fragment.viewPos += weight * v.viewNor;
+            fragment.texcoord0 += weight * v.texcoord0;
+          }
 
-		  //        fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-		  //        fragment.viewNor = primitive.v[0].viewNor;
-		  //        fragment.viewPos = glm::vec3(viewPos, depth);
+          //fragment.viewNor = primitive.v[0].viewNor;
+          fragment.viewPos = glm::vec3(viewPos, depth);
 
-		  //        //fragment.viewPos = vertex.eyePos;
-		  //        //fragment.texcoord0 = vertex.texcoord0;
-
-		  //        ////TODO: get rid of this
-		  fragment.color = glm::vec3(1.0f);
-		  //int id = IDx;
-		  //debug0("WTF: index=%d\n ", index);
-  //      }
+          // TODO: get rid of:
+          fragment.color = glm::vec3(1.0f);
+        }
       }
     }
   }
@@ -768,19 +759,22 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
  * Perform rasterization.
  */
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
-    int sideLength2d = 8;
-    dim3 blockSize2d(sideLength2d, sideLength2d);
+    int sideLength = 8;
+    dim3 blockSize2d(sideLength, sideLength);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
     (height - 1) / blockSize2d.y + 1);
 
   // Execute your rasterization pipeline here
+  cudaMemset(dev_primitives, 0, width * height * sizeof(Primitive));
+  cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+
   // (See README for rasterization pipeline outline.)
 
   // Vertex Process & primitive assembly
       
+  dim3 numThreadsPerBlock(128);
   curPrimitiveBeginId = 0;
   {
-    dim3 numThreadsPerBlock(128);
 
     auto it = mesh2vertexParts.begin();
     auto itEnd = mesh2vertexParts.end();
@@ -813,11 +807,12 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     checkCUDAError("Vertex Processing and Primitive Assembly");
   }
   
-  int numPixels = width * height;
   _initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+  cudaMemset(dev_framebuffer, 0, width * height * sizeof(Fragment));
   
   // TODO: rasterize
-  _rasterize<< <blockCount2d, blockSize2d >> > 
+  dim3 blockSize = totalNumPrimitives / numThreadsPerBlock.x + 1;
+  _rasterize<< <blockSize, numThreadsPerBlock>> > 
     (totalNumPrimitives, height, width, 
     dev_primitives, dev_depth, dev_fragmentBuffer);
   checkCUDAError("rasterizer");

@@ -12,6 +12,8 @@
 #include <glm/glm.hpp>
 #include <util/utilityCore.hpp>
 
+#define range(i, start, stop) for (i = start; i < stop; i++)
+
 struct AABB {
     glm::vec3 min;
     glm::vec3 max;
@@ -98,4 +100,14 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
     return -(barycentricCoord.x * tri[0].z
            + barycentricCoord.y * tri[1].z
            + barycentricCoord.z * tri[2].z);
+}
+
+__host__ __device__ 
+glm::vec3 interpolateVec3(const glm::vec3 tri[3], const glm::vec3 bcCoord) {
+  int i;
+  glm::vec3 val;
+  range(i, 0, 3) {
+    val += bcCoord[i] * tri[i];
+  }
+  return val;
 }
