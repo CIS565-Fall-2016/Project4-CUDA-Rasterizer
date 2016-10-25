@@ -684,11 +684,6 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
-__device__
-float _calcDetermimate(glm::vec3 p0, glm::vec3 p1, glm::vec2 p2) {
-	return (p1.x - p0.x)*(p2.y - p0.y) - (p1.y - p0.y)*(p2.x - p0.x);
-}
-
 __global__
 void _rasterizePrims(
 	int width, int height,
