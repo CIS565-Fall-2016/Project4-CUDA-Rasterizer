@@ -157,8 +157,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
 		//framebuffer[index] = diffuse;
 		if (fragmentBuffer[index].dev_diffuseTex != NULL){
-			float u = fragmentBuffer[index].texcoord0.x * width - 0.5f;
-			float v = fragmentBuffer[index].texcoord0.y * height - 0.5f;
+			
+			float u = fragmentBuffer[index].texcoord0.x * width;
+			float v = fragmentBuffer[index].texcoord0.y * height;
 
 			/*Bilinear Filtering:
 				http://www.scratchapixel.com/code.php?id=56&origin=/lessons/mathematics-physics-for-computer-graphics/interpolation
@@ -170,21 +171,21 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			int u1 = static_cast<int>(u);
 			int v1 = static_cast<int>(v);
 
-			int c00 = u1 + v1 * width;
-			int c01 = u1 + 1 + v1 * width;
-			int c10 = u1 + (v1 + 1) * width;
-			int c11 = u1 + 1 + (v1 + 1) * width;
+			int c00 = 3 * (u1 + v1 * width);
+			int c10 = 3 * (u1 + 1 + v1 * width);
+			int c01 = 3 * (u1 + (v1 + 1) * width);
+			int c11 = 3 * (u1 + 1 + (v1 + 1) * width);
 
 			TextureData* texture = fragmentBuffer[index].dev_diffuseTex;
 
-			glm::vec3 t00(texture[c00 * 3] / 255.f, texture[c00 * 3 + 1] / 255.f, texture[c00 * 3 + 2] / 255.f);
-			glm::vec3 t01(texture[c01 * 3] / 255.f, texture[c01 * 3 + 1] / 255.f, texture[c01 * 3 + 2] / 255.f);
-			glm::vec3 t10(texture[c10 * 3] / 255.f, texture[c10 * 3 + 1] / 255.f, texture[c10 * 3 + 2] / 255.f);
-			glm::vec3 t11(texture[c11 * 3] / 255.f, texture[c11 * 3 + 1] / 255.f, texture[c11 * 3 + 2] / 255.f);
+			glm::vec3 t00(texture[c00] / 255.f, texture[c00 + 1] / 255.f, texture[c00 + 2] / 255.f);
+			glm::vec3 t01(texture[c01] / 255.f, texture[c01 + 1] / 255.f, texture[c01 + 2] / 255.f);
+			glm::vec3 t10(texture[c10] / 255.f, texture[c10 + 1] / 255.f, texture[c10 + 2] / 255.f);
+			glm::vec3 t11(texture[c11] / 255.f, texture[c11 + 1] / 255.f, texture[c11 + 2] / 255.f);
 
 			framebuffer[index] = (1.f - vMin) * ((1.f - uMin) * t00 + uMin * t10) + vMin * ((1.f - uMin) * t01 + uMin * t11);
-			//int uv_index = 3 * (u + v * fragmentBuffer[index].diffuseTexWidth);
-			/*framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
+			/*int uv_index = 3 * (u1 + v1 * width);
+			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
 		}
 		else{
 			framebuffer[index] = diffuse;
