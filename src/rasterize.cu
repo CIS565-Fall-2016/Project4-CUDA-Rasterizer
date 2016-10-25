@@ -745,7 +745,21 @@ void _rasterizePrims(
 						//interpolate
 						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * primitive.v[0].eyePos + barycentricCoord.y *primitive.v[1].eyePos + barycentricCoord.z * primitive.v[2].eyePos;
 						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * primitive.v[0].eyeNor + barycentricCoord.y *primitive.v[1].eyeNor + barycentricCoord.z * primitive.v[2].eyeNor;
-						dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;
+						
+						/*Perspective correct depth interpolation: 
+							http://www.scratchapixel.com/lessons/3d-basic-rendering/rasterization-practical-implementation/perspective-correct-interpolation-vertex-attributes
+						*/
+
+						// divide vertex-attribute by the vertex z-coordinate
+						glm::vec3 perspectivebarycentricCoord = glm::vec3(barycentricCoord.x / primitive.v[0].eyePos.z, barycentricCoord.y / primitive.v[1].eyePos.z, barycentricCoord.z / primitive.v[2].eyePos.z);
+						// if we use perspective correct interpolation we need to
+						// multiply the result of this interpolation by z, the depth
+						// of the point on the 3D triangle that the pixel overlaps.
+						float depth = (1.0f / (perspectivebarycentricCoord.x + perspectivebarycentricCoord.y + perspectivebarycentricCoord.z));
+						dev_fragmentBuffer[index].texcoord0 = glm::mat3x2(primitive.v[0].texcoord0, primitive.v[1].texcoord0, primitive.v[2].texcoord0)
+							* perspectivebarycentricCoord * depth;
+
+						/*dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;*/
 						
 					}
 				}
