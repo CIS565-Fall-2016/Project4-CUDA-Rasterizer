@@ -373,10 +373,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						return;
 
 					// TODO: add new attributes for your PrimitiveDevBufPointers when you add new attributes
-					VertexIndex* dev_indices;
-					VertexAttributePosition* dev_position;
-					VertexAttributeNormal* dev_normal;
-					VertexAttributeTexcoord* dev_texcoord0;
+					VertexIndex* dev_indices = NULL;
+					VertexAttributePosition* dev_position = NULL;
+					VertexAttributeNormal* dev_normal = NULL;
+					VertexAttributeTexcoord* dev_texcoord0 = NULL;
 
 					// ----------Indices-------------
 
@@ -633,9 +633,23 @@ void _vertexTransformAndAssembly(
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
 		// Then divide the pos by its w element to transform into NDC space
 		// Finally transform x and y to viewport space
+		//VertexOut out;
+		//glm::vec4 clip = MVP * glm::vec4(primitive.dev_position[primitive.dev_indices[vid]], 1.0f);
+		//glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
+
+		//float near = 1.0f;
+		//float far = 1000.0f;
+
+		//out.pos = glm::vec4(width/2*(ndc.x+1), height/2*(ndc.y+1), (far-near)/2*ndc.z + (far+near)/2, 1.0f);
+		//out.eyeNor = primitive.dev_normal[primitive.dev_indices[vid]];
+
+		//primitive.dev_verticesOut[vid] = out;
+
 
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
+
+		primitive.dev_verticesOut[vid].pos = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
 		
 	}
 }
@@ -655,12 +669,12 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
@@ -668,6 +682,103 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+__global__ void _rasterization(int numIndices, Primitive *dev_primitive, int width, int height, Fragment *frag)
+{
+	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+	if (iid < numIndices)
+	{
+		auto vec4ToVec2 = [](glm::vec4 p) -> glm::vec2 {
+			return glm::vec2(p.x / p.w, p.y / p.w);
+		};
+
+		auto vec4ToVec3 = [vec4ToVec2](glm::vec4 p) -> glm::vec3 {
+			return glm::vec3(vec4ToVec2(p), 0.0f);
+		};
+
+		VertexOut *triangle = dev_primitive[iid].v;
+		glm::vec3 trianglePts[] = { vec4ToVec3(triangle[0].pos), vec4ToVec3(triangle[1].pos), vec4ToVec3(triangle[2].pos) };
+		auto aabbPts = getAABBForTriangle(trianglePts);
+
+		auto trans = [](float x, int len) -> int
+		{
+			int new_x = (x + 1.0f) * 0.5f * len;
+			if (new_x >= len) new_x = len - 1;
+			if (new_x < 0) new_x = 0;
+			return new_x;
+		};
+
+		int x_min = trans(aabbPts.min.x, width);
+		int y_min = trans(aabbPts.min.y, height);
+		int x_max = trans(aabbPts.max.x, width);
+		int y_max = trans(aabbPts.max.y, height);
+
+		for (int y = y_min; y <= y_max; ++y)
+		{
+			for (int x = x_min; x <= x_max; ++x)
+			{
+				int idx = x + (height - y - 1) * width;
+				float xx = 2 * ((float)x / width) - 1;
+				float yy = 2 * ((float)y / height) - 1;
+
+				auto isInTriangle = [vec4ToVec2](float xx, float yy, glm::vec4 p1, glm::vec4 p2, glm::vec4 p3) -> bool {
+					auto p1_2d = vec4ToVec2(p1);
+					auto p2_2d = vec4ToVec2(p2);
+					auto p3_2d = vec4ToVec2(p3);
+
+					auto ccw = [](glm::vec2 p1, glm::vec2 p2, glm::vec2 p3) -> float {
+						return p1.x * p2.y + p2.x * p3.y + p3.x * p1.y - p1.y * p2.x - p2.y * p3.x - p3.y * p1.x;
+					};
+
+
+					auto p = glm::vec2(xx, yy);
+					return ccw(p1_2d, p2_2d, p) > 0 && ccw(p2_2d, p3_2d, p) > 0 && ccw(p3_2d, p1_2d, p) > 0;
+				};
+
+				if (isInTriangle(xx, yy, triangle[0].pos, triangle[1].pos, triangle[2].pos))
+				{
+					frag[idx].color = glm::vec3(1.0f, 0, 0);
+				}
+			}
+		}
+
+
+		// Naive loop over all pixels.
+		//for (int y = 0; y < height; ++y)
+		//{
+		//	for (int x = 0; x < width; ++x)
+		//	{
+		//		int idx = x + y * width;
+		//		float xx = 2 * ((float)x / width) - 1;
+		//		float yy = 2 * ((float)(width - y) / width) - 1;
+
+		//		auto isInTriangle = [](float xx, float yy, glm::vec4 p1, glm::vec4 p2, glm::vec4 p3) -> bool {
+		//			auto vec4ToVec2 = [](glm::vec4 p) -> glm::vec2 {
+		//				return glm::vec2(p.x / p.w, p.y / p.w);
+		//			};
+
+		//			auto p1_2d = vec4ToVec2(p1);
+		//			auto p2_2d = vec4ToVec2(p2);
+		//			auto p3_2d = vec4ToVec2(p3);
+
+		//			auto ccw = [](glm::vec2 p1, glm::vec2 p2, glm::vec2 p3) -> float {
+		//				return p1.x * p2.y + p2.x * p3.y + p3.x * p1.y - p1.y * p2.x - p2.y * p3.x - p3.y * p1.x;
+		//			};
+
+
+		//			auto p = glm::vec2(xx, yy);
+		//			return ccw(p1_2d, p2_2d, p) > 0 && ccw(p2_2d, p3_2d, p) > 0 && ccw(p3_2d, p1_2d, p) > 0;
+		//		};
+
+		//		VertexOut *triangle = dev_primitive[iid].v;
+		//		if (isInTriangle(xx, yy, triangle[0].pos, triangle[1].pos, triangle[2].pos))
+		//		{
+		//			frag[idx].color = glm::vec3(1.0f, 0, 0);
+		//		}
+		//	}
+		//}
+	}
+}
 
 
 /**
@@ -718,8 +829,12 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// TODO: rasterize
-
-
+	//Primitive *primitives = new Primitive[totalNumPrimitives];
+	//cudaMemcpy(primitives, dev_primitives, sizeof(Primitive) * totalNumPrimitives, cudaMemcpyDeviceToHost);
+	dim3 numThreadsPerBlock(128);
+	dim3 numBlocks((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	_rasterization << <numBlocks, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer);
+	
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
