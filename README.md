@@ -35,6 +35,11 @@ Lambert | Blinn-Phong
 --- | ---
  ![](img/cover_lambert.gif) |  ![](img/cover_blinnphong.gif)
 
+### Depth Test with Mutex
+Mutex OFF | Mutex ON
+--- | ---
+ ![](img/mutex_off.gif) |  ![](img/mutex_on.gif)
+
 ### Texcoord Correction
 Perspective Correction OFF | Perspective Correction ON
 --- | ---

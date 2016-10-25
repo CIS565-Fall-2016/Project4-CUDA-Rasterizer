@@ -805,6 +805,7 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 				// depth test, account for race condition when accessing depth buffer
 				const int depth = (int)(z * INT_MAX);
 				bool isOccluded = true;
+#ifndef MUTEX
 				bool isSet = false;
 				while (!isSet) {
 					isSet = atomicCAS(&dev_mutex[pixelId], 0, 1) == 0;
@@ -816,6 +817,12 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 						dev_mutex[pixelId] = 0;
 					}
 				}
+#else
+				if (dev_depth[pixelId] > depth) {
+					dev_depth[pixelId] = depth;
+					isOccluded = false;
+				}
+#endif
 				// occluded
 				if (isOccluded) continue;
 
