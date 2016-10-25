@@ -111,6 +111,16 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
  			+ barycentricCoord.z * input[2];
   }
 
+  /**
+   * For a given barycentric coordinate, compute a float on the triangle.
+  */
+  __host__ __device__ static
+  float getFloatAtCoordinate(const glm::vec3 barycentricCoord, const float input[3]) {
+  	return barycentricCoord.x * input[0]
+  		   + barycentricCoord.y * input[1]
+  		   + barycentricCoord.z * input[2];
+  }
+
 /**
  * For a given barycentric coordinate, compute the corresponding vec2
  * on the triangle.
@@ -136,4 +146,22 @@ glm::vec3 getColorFromTextureAtCoordinate(const unsigned char *pTextureData,
 	return scale * glm::vec3(pTextureData[index * stride],
 			pTextureData[index * stride + 1],
 			pTextureData[index * stride + 2]);
+}
+
+/**
+ * For a given barycentric coordinate, compute the corresponding perspective
+ * corrected texcoord on the triangle.
+ */
+__host__ __device__ static
+glm::vec2 getPerspectiveCorrectedTexcoordAtCoordinate(const glm::vec3 baryCoord,
+		const glm::vec2 _texcoord[3], const float triDepth_1[3]) {
+	const glm::vec2 texcoord[3] = {
+		_texcoord[0] * triDepth_1[0],
+		_texcoord[1] * triDepth_1[1],
+		_texcoord[2] * triDepth_1[2]
+	};
+	const glm::vec2 numerator = getVec2AtCoordinate(baryCoord, texcoord);
+	const float denomenator = getFloatAtCoordinate(baryCoord, triDepth_1);
+
+	return numerator / denomenator;
 }

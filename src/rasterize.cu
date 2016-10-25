@@ -756,6 +756,11 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 			primitive.v[1].texcoord0,
 			primitive.v[2].texcoord0
 		};
+		const float triDepth_1[3] = {
+			1.f / tri[0].z,
+			1.f / tri[1].z,
+			1.f / tri[2].z
+		};
 		TextureData *pDiffuseTexData = primitive.v[0].dev_diffuseTex;
 		int diffuseTexWidth = 0;
 		int diffuseTexHeight = 0;
@@ -814,7 +819,10 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 
 				fragment.eyePos = getVec3AtCoordinate(baryCoord, eyePos);
 				fragment.eyeNor = glm::normalize(getVec3AtCoordinate(baryCoord, eyeNor));
-				fragment.texcoord0 = getVec2AtCoordinate(baryCoord, texcoord0);
+				// fragment.texcoord0 = getVec2AtCoordinate(baryCoord, texcoord0);
+				// calculate perspective corrected texcoord
+				fragment.texcoord0 = getPerspectiveCorrectedTexcoordAtCoordinate(
+						baryCoord, texcoord0, triDepth_1);
 
 				if (pDiffuseTexData != NULL) {
 					// diffuse texture provided
