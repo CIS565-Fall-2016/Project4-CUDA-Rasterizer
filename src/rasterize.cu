@@ -153,8 +153,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
         //framebuffer[index] = fragmentBuffer[index].color;
-		glm::vec3 light = glm::normalize(glm::vec3(1, 3, 5));
-		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
+		glm::vec3 light = glm::normalize(glm::vec3(1, 1, 1));
+		float costheta = glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f);
+		glm::vec3 diffuse;
 		//framebuffer[index] = diffuse;
 		if (fragmentBuffer[index].dev_diffuseTex != NULL){
 			
@@ -188,7 +189,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
 		}
 		else{
-			framebuffer[index] = diffuse;
+			framebuffer[index] = fragmentBuffer[index].color * costheta;
 		}
 
     }
