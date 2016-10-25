@@ -38,7 +38,7 @@ Lambert | Blinn-Phong
 ### Rasterization Mode
 Point | Wireframe | Solid
 --- | --- | ---
- ![](img/dummy.gif) | ![](img/line.gif) | ![](img/triangle.gif)
+ ![](img/point.gif) | ![](img/line.gif) | ![](img/triangle.gif)
 
 ### Depth Test with Mutex
 Mutex OFF | Mutex ON

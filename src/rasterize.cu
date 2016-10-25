@@ -181,6 +181,8 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	}
 #elif LINE
 	buffer = fragment.color;
+#elif POINT
+	buffer = fragment.color;
 #endif
 }
 
@@ -856,7 +858,7 @@ void _rasterizePrimitive(int totalNumPrimitives, Primitive *dev_primitives,
 
 __host__ __device__
 void _rasterizeLineHelper(const glm::vec3 &a, const glm::vec3 &b,
-		Fragment *dev_fragmentBuffer, int *dev_depth, int w, int h) {
+		Fragment *dev_fragmentBuffer, int w, int h) {
 	const int left = max(0, (int)min(a.x, b.x));
 	const int right = min(w, (int)max(a.x, b.x) + 1);
 	const int bottom = max(0, (int)min(a.y, b.y));
@@ -871,20 +873,14 @@ void _rasterizeLineHelper(const glm::vec3 &a, const glm::vec3 &b,
 	for (int i = 0; i <= end - begin; ++i) {
 		const glm::vec3 p = getVec3AtU((i + 0.f) / (end - begin), a, b);
 		const int index = (int)p.x + (int)p.y * w;
-		const int depth = (int)(p.z * INT_MAX);
 
-		if (dev_depth[index] <= depth) continue;
-		dev_depth[index] = depth;
-
-		Fragment &fragment = dev_fragmentBuffer[index];
-
-		fragment.color = glm::vec3(1.f);
+		dev_fragmentBuffer[index].color = glm::vec3(1.f);
 	}
 }
 
 __global__
 void _rasterizeLine(int totalNumPrimitives, Primitive *dev_primitives,
-		Fragment *dev_fragmentBuffer, int *dev_depth, int w, int h) {
+		Fragment *dev_fragmentBuffer, int w, int h) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
 
 	if (idx >= totalNumPrimitives) {
@@ -897,9 +893,37 @@ void _rasterizeLine(int totalNumPrimitives, Primitive *dev_primitives,
 	const glm::vec3 &v2 = glm::vec3(primitive.v[2].pos);
 
 	if (primitive.primitiveType == Triangle) {
-		_rasterizeLineHelper(v0, v1, dev_fragmentBuffer, dev_depth, w, h);
-		_rasterizeLineHelper(v1, v2, dev_fragmentBuffer, dev_depth, w, h);
-		_rasterizeLineHelper(v2, v0, dev_fragmentBuffer, dev_depth, w, h);
+		_rasterizeLineHelper(v0, v1, dev_fragmentBuffer, w, h);
+		_rasterizeLineHelper(v1, v2, dev_fragmentBuffer, w, h);
+		_rasterizeLineHelper(v2, v0, dev_fragmentBuffer, w, h);
+	}
+}
+
+__global__
+void _rasterizePoint(int totalNumPrimitives, Primitive *dev_primitives,
+		Fragment *dev_fragmentBuffer, int w, int h) {
+	int idx = blockDim.x * blockIdx.x + threadIdx.x;
+
+	if (idx >= totalNumPrimitives) {
+		return;
+	}
+
+	const Primitive &primitive = dev_primitives[idx];
+	const glm::vec3 tri[3] = {
+			glm::vec3(primitive.v[0].pos),
+			glm::vec3(primitive.v[1].pos),
+			glm::vec3(primitive.v[2].pos)
+	};
+
+	if (primitive.primitiveType == Triangle) {
+		for (int i = 0; i < 3; ++i) {
+			const int x = (int)tri[i].x;
+			const int y = (int)tri[i].y;
+			const int index = x + y * w;
+
+			if (x < 0 || x >= w || y < 0 || y >= h) continue;
+			dev_fragmentBuffer[index].color = glm::vec3(1.f);
+		}
 	}
 }
 
@@ -961,7 +985,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV,
 			width, height, dev_mutex);
 #elif LINE
 	_rasterizeLine<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
-			totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth,
+			totalNumPrimitives, dev_primitives, dev_fragmentBuffer,
+			width, height);
+#elif POINT
+	_rasterizePoint<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
+			totalNumPrimitives, dev_primitives, dev_fragmentBuffer,
 			width, height);
 #endif
 	checkCUDAError("rasterize primitive");
