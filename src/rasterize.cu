@@ -110,7 +110,7 @@ static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
 static float * dev_depth = NULL;
-static bool * dev_mutex = NULL;
+static int * dev_mutex = NULL;
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
@@ -144,7 +144,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
         framebuffer[index] = fragmentBuffer[index].color;
-
+		
 		// TODO: add your fragment shader code here
 
     }
@@ -167,7 +167,7 @@ void rasterizeInit(int w, int h) {
 	cudaMalloc(&dev_depth, width * height * sizeof(float));
 
 	cudaFree(dev_mutex);
-	cudaMalloc(&dev_mutex, width * height * sizeof(bool));
+	cudaMalloc(&dev_mutex, width * height * sizeof(int));
 
 	checkCUDAError("rasterizeInit");
 }
@@ -673,6 +673,15 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+__global__ void initDepths(int width, int height, float* dev_depth) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	if (x < width && y < height) {
+		int idx = y * width + x;
+		dev_depth[idx] = FLT_MAX;
+	}
+}
 
 __global__ void _rasterize(
 	int totalNumPrimitives, 
@@ -680,7 +689,7 @@ __global__ void _rasterize(
 	Primitive* dev_primitives,
 	Fragment* dev_fragmentBuffer,
 	float* dev_depth,
-	bool* dev_mutex
+	int* dev_mutex
 	) {
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (pid > totalNumPrimitives) {
@@ -692,7 +701,6 @@ __global__ void _rasterize(
 		glm::vec3(dev_primitives[pid].v[2].pos)
 	};
 	AABB aabb = getAABBForTriangle(tri);
-	bool set;
 	int maxx = glm::clamp(0, width - 1, (int) aabb.max.x),
 		maxy = glm::clamp(0, height - 1, (int) aabb.max.y);
 	int fid;
@@ -706,10 +714,19 @@ __global__ void _rasterize(
 					dev_primitives[pid].v[1].pos.z, 
 					dev_primitives[pid].v[2].pos.z)
 				);
+				bool isSet;
 				do {
-					set = atomicCAS(dev_mu)
-				}
-				dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
+					isSet = (atomicCAS(&dev_mutex[fid], 0, 1) == 0);
+					if (isSet) {
+						if (z < dev_depth[fid]) {
+							dev_depth[fid] = z;
+							dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
+						}
+					}
+					if (isSet) {
+						dev_mutex[fid] = 0;
+					}
+				} while (z < dev_depth[fid] && !isSet);
 			}
 		}
 	}
@@ -762,12 +779,13 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	}
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	cudaMemset(dev_mutex, false, width * height * sizeof(bool));
+	initDepths << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// TODO: rasterize
 	dim3 numThreadsPerBlock(128);
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer);
+	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex);
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
