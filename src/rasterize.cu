@@ -47,7 +47,7 @@ namespace {
 		// glm::vec3 col;
 		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
+		 int texWidth, texHeight;
 		// ...
 	};
 
@@ -55,6 +55,8 @@ namespace {
 		PrimitiveType primitiveType = Triangle;	// C++ 11 init
 		TextureData* dev_diffuseTex;
 		VertexOut v[3];
+		int diffuseTexWidth;
+		int diffuseTexHeight;
 	};
 
 	struct Fragment {
@@ -68,6 +70,8 @@ namespace {
 		 glm::vec3 eyeNor;
 		 VertexAttributeTexcoord texcoord0;
 		 TextureData* dev_diffuseTex;
+		 int diffuseTexWidth;
+		 int diffuseTexHeight;
 		// ...
 	};
 
@@ -148,7 +152,17 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
         //framebuffer[index] = fragmentBuffer[index].color;
 		glm::vec3 light = glm::normalize(glm::vec3(1, 3, 5));
 		glm::vec3 diffuse = glm::clamp(fragmentBuffer[index].color * glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f), 0.0f, 1.0f);
-		framebuffer[index] = diffuse;
+		//framebuffer[index] = diffuse;
+		if (fragmentBuffer[index].dev_diffuseTex != NULL){
+			int u = fragmentBuffer[index].texcoord0.x * fragmentBuffer[index].diffuseTexWidth;
+			int v = fragmentBuffer[index].texcoord0.y * fragmentBuffer[index].diffuseTexHeight;
+
+			int uv_index = 3 * (u + v * fragmentBuffer[index].diffuseTexWidth);
+			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);
+		}
+		else{
+			framebuffer[index] = diffuse;
+		}
 
     }
 }
@@ -637,6 +651,7 @@ void _vertexTransformAndAssembly(
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid < numVertices) {
 		glm::vec4 clipSpace = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
+
 		clipSpace /= clipSpace.w;
 		// TODO: Apply vertex transformation here
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
@@ -647,12 +662,17 @@ void _vertexTransformAndAssembly(
 		// Assemble all attribute arraies into the primitive array
 		clipSpace.x = (width / 2) * -1 * clipSpace.x + (width / 2);
 		clipSpace.y = (height / 2) * -1 * clipSpace.y + (height / 2);
-		
+
 		// Assemble all attribute arrays into the primitive array
 		primitive.dev_verticesOut[vid].pos = clipSpace;
-		primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.0f));
-		primitive.dev_verticesOut[vid].eyeNor = MV_normal * primitive.dev_normal[vid];
-		
+		glm::vec4 tmpEyePos = (MV * glm::vec4(primitive.dev_position[vid], 1.0f));
+		primitive.dev_verticesOut[vid].eyePos = glm::vec3(tmpEyePos / tmpEyePos.w);
+		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);	
+		primitive.dev_verticesOut[vid].texWidth = primitive.diffuseTexWidth;
+		primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
+		if (primitive.dev_diffuseTex != NULL)
+			primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
+		primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
 	}
 }
 
@@ -673,9 +693,10 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
 		int pid;	// id for cur primitives vector
 		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-			pid = iid / (int)primitive.primitiveType;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+			//pid = iid / (int)primitive.primitiveType;
+			pid = iid / 3; //triangle
+			//dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % 3] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 		}
 
 
@@ -695,17 +716,15 @@ void _rasterizePrims(
 	
 		if (pid < numPrimitives) {
 		Primitive primitive = dev_primitives[pid];
-		glm::vec3 p0 = glm::vec3(primitive.v[0].pos);
-		glm::vec3 p1 = glm::vec3(primitive.v[1].pos);
-		glm::vec3 p2 = glm::vec3(primitive.v[2].pos);
-		int minX = glm::max(glm::floor(glm::min(p0.x, glm::min(p1.x, p2.x))), 0.0f);
-		int maxX = glm::min(glm::ceil(glm::max(p0.x, glm::max(p1.x, p2.x))), width - 1.0f);
-		int minY = glm::max(glm::floor(glm::min(p0.y, glm::min(p1.y, p2.y))), 0.0f);
-		int maxY = glm::min(glm::ceil(glm::max(p0.y, glm::max(p1.y, p2.y))), height - 1.0f);
+		glm::vec3 prim0 = glm::vec3(primitive.v[0].pos);
+		glm::vec3 prim1 = glm::vec3(primitive.v[1].pos);
+		glm::vec3 prim2 = glm::vec3(primitive.v[2].pos);
+		int minX = glm::max(glm::floor(glm::min(prim0.x, glm::min(prim1.x, prim2.x))), 0.0f);
+		int maxX = glm::min(glm::ceil(glm::max(prim0.x, glm::max(prim1.x, prim2.x))), width - 1.0f);
+		int minY = glm::max(glm::floor(glm::min(prim0.y, glm::min(prim1.y, prim2.y))), 0.0f);
+		int maxY = glm::min(glm::ceil(glm::max(prim0.y, glm::max(prim1.y, prim2.y))), height - 1.0f);
 		
-		glm::vec3 tri[3] = { p0, p1, p2 };
-		glm::vec3 eyePosTri[3] = { primitive.v[0].eyePos, primitive.v[1].eyePos, primitive.v[2].eyePos };
-		glm::vec3 eyeNorTri[3] = { primitive.v[0].eyeNor, primitive.v[1].eyeNor, primitive.v[2].eyeNor };
+		glm::vec3 tri[3] = { prim0, prim1, prim2 };
 		
 		glm::vec3 color(1.f);
 
@@ -720,9 +739,13 @@ void _rasterizePrims(
 					atomicMin(&dev_depth[index], depth);
 					if (depth == dev_depth[index]) {
 						dev_fragmentBuffer[index].color = color;
+						dev_fragmentBuffer[index].dev_diffuseTex = primitive.v[0].dev_diffuseTex;
+						dev_fragmentBuffer[index].diffuseTexHeight = primitive.v[0].texHeight;
+						dev_fragmentBuffer[index].diffuseTexWidth = primitive.v[0].texWidth;
 						//interpolate
-						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * eyePosTri[0] + barycentricCoord.y * eyePosTri[1] + barycentricCoord.z * eyePosTri[2];
-						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * eyeNorTri[0] + barycentricCoord.y * eyeNorTri[1] + barycentricCoord.z * eyeNorTri[2];
+						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * primitive.v[0].eyePos + barycentricCoord.y *primitive.v[1].eyePos + barycentricCoord.z * primitive.v[2].eyePos;
+						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * primitive.v[0].eyeNor + barycentricCoord.y *primitive.v[1].eyeNor + barycentricCoord.z * primitive.v[2].eyeNor;
+						dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;
 						
 					}
 				}
