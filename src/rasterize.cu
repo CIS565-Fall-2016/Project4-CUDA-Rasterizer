@@ -62,8 +62,8 @@ namespace {
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
 
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
+		glm::vec3 eyePos;	// eye space position used for shading
+		glm::vec3 eyeNor;
 		// VertexAttributeTexcoord texcoord0;
 		// TextureData* dev_diffuseTex;
 		// ...
@@ -143,10 +143,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int index = x + (y * w);
 
     if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
-		
-		// TODO: add your fragment shader code here
-
+		auto & frag = fragmentBuffer[index];
+		framebuffer[index] = frag.color * glm::max(0.0f, glm::dot(frag.eyeNor, glm::vec3(-1.0f)));
+		framebuffer[index] = frag.eyeNor + glm::vec3(0.5f,0.0f,0.0f);
     }
 }
 
@@ -218,7 +217,7 @@ void _deviceBufferCopy(int N, BufferByte* dev_dst, const BufferByte* dev_src, in
 				+ j];
 		}
 	}
-	
+
 
 }
 
@@ -636,12 +635,21 @@ void _vertexTransformAndAssembly(
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (vid < numVertices) {
 		auto pos = MVP * glm::vec4((glm::vec3) primitive.dev_position[vid], 1);
-		pos /= pos.w;
-
+		
+		if (fabs(pos.w) > EPSILON) {
+			pos /= pos.w;
+		}
 		pos.x = 0.5f * (float)width * (pos.x + 1.0f);
 		pos.y = 0.5f * (float)height * (pos.y + 1.0f);
 
 		primitive.dev_verticesOut[vid].pos = pos;
+
+		auto eyePos = MV * glm::vec4(primitive.dev_position[vid], 1.0f);
+		if (fabs(eyePos.w) > EPSILON) {
+			primitive.dev_verticesOut[vid].eyePos = glm::vec3(eyePos / eyePos.w);
+		}
+		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
+
 	}
 }
 
@@ -721,6 +729,14 @@ __global__ void _rasterize(
 						if (z < dev_depth[fid]) {
 							dev_depth[fid] = z;
 							dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
+							dev_fragmentBuffer[fid].eyePos = glm::mat3(
+								dev_primitives[pid].v[0].eyePos,
+								dev_primitives[pid].v[1].eyePos,
+								dev_primitives[pid].v[2].eyePos) * barycentric;
+							dev_fragmentBuffer[fid].eyeNor = glm::normalize(glm::cross(
+								dev_primitives[pid].v[1].eyeNor - dev_primitives[pid].v[0].eyeNor,
+								dev_primitives[pid].v[2].eyeNor - dev_primitives[pid].v[0].eyeNor
+								));
 						}
 					}
 					if (isSet) {
