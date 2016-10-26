@@ -29,7 +29,7 @@
 #define DEBUG 1
 #define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
 #define debug0(...) if (DEBUG == 1 && id == 0) { printf (__VA_ARGS__); }
-#define debugDuck(...) if (DEBUG == 1 && id == 36105) { printf (__VA_ARGS__); }
+#define debugDuck(...) if (DEBUG == 1 && id == 310031) { printf (__VA_ARGS__); }
 #define range(i, start, stop) for (i = start; i < stop; i++)
 
 namespace {
@@ -58,14 +58,14 @@ namespace {
     glm::vec3 viewPos;  // eye space position used for shading
     glm::vec3 viewNor;  // eye space normal used for shading, cuz normal will go wrong after perspective transformation
     // glm::vec3 col;
-    glm::vec2 texcoord0;
+    VertexAttributeTexcoord texcoord0;
   };
 
   struct Primitive {
     PrimitiveType primitiveType = Triangle; // C++ 11 init
     Vertex v[3];
-    TextureData* dev_diffuseTex = NULL;
-    // int texWidth, texHeight;
+    TextureData* diffuseTex = NULL;
+    int texWidth, texHeight;
     // ...
   };
 
@@ -78,8 +78,7 @@ namespace {
 
      glm::vec3 viewPos;  // eye space position used for shading
      glm::vec3 viewNor;
-     VertexAttributeTexcoord texcoord0;
-     TextureData* dev_diffuseTex;
+     TextureData* diffuseTex;
     // ...
   };
 
@@ -91,19 +90,19 @@ namespace {
     int numVertices;
 
     // Vertex, const after loaded
-    VertexIndex* dev_indices;
-    VertexAttributePosition* dev_pos;
-    VertexAttributeNormal* dev_normal;
-    VertexAttributeTexcoord* dev_texcoord0;
+    VertexIndex* indices;
+    VertexAttributePosition* pos;
+    VertexAttributeNormal* normal;
+    VertexAttributeTexcoord* texcoord0;
 
     // Materials, add more attributes when needed
-    TextureData* dev_diffuseTex;
+    TextureData* diffuseTex;
     // TextureData* dev_specularTex;
     // TextureData* dev_normalTex;
     // ...
 
     // Vertex Out, vertex used for rasterization, this is changing every frame
-    Vertex* dev_vertices;
+    Vertex* vertices;
 
     // TODO: add more attributes when needed
     int texWidth;
@@ -536,8 +535,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   // TODO: store the image size to your PrimitiveDevBufPointers
                   texWidth = image.width;
                   texHeight = image.height;
-                  // image.width;
-                  // image.height;
 
                   checkCUDAError("Set Texture Image data");
                 }
@@ -632,22 +629,21 @@ void _vertexTransformAndAssembly(
   // vertex id
   if (IDx >= numVertices) return;
 
-  Vertex &vertex = vertexParts.dev_vertices[IDx];
+  Vertex &vertex = vertexParts.vertices[IDx];
 
   // Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
   // Then divide the pos by its w element to transform into NDC space
   // Finally transform x and y to viewport space
   // TODO: Apply vertex transformation here
-  glm::vec4 modelPos = glm::vec4(vertexParts.dev_pos[IDx], 1); // this is in model space
+  glm::vec4 modelPos = glm::vec4(vertexParts.pos[IDx], 1); // this is in model space
   vertex.viewPos = glm::vec3(MV * modelPos);
-  vertex.viewNor = glm::vec3(MV_normal * vertexParts.dev_normal[IDx]);
+  vertex.viewNor = glm::vec3(MV_normal * vertexParts.normal[IDx]);
   glm::vec4 clipPos(MVP * modelPos);
   glm::vec4 screenDims(width, height, 1, 1);
   vertex.pos = screenDims * (clipPos / clipPos.w + glm::vec4(1, 1, 0, 0)) / 2.0f;
 
   // Assemble all attribute arrays into the primitive array
-  //vertex.texcoord0 = vertexParts.dev_texcoord0[vid];
-  //vertex.dev_diffuseTex = vertexParts.dev_diffuseTex;
+  vertex.texcoord0 = vertexParts.texcoord0[IDx];
 }
 
 
@@ -657,7 +653,7 @@ static int curPrimitiveBeginId = 0;
 // START HERE: figure out where to put texture info
 
 __global__
-void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, VertexParts vertexParts) {
+void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* primitives, VertexParts vertexParts) {
 
   // index id
   if (IDx < numIndices) {
@@ -665,14 +661,16 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
     // TODO: uncomment the following code for a start
      //This is primitive assembly for triangles
 
-    int pid;	// id for cur primitives vector
     if (vertexParts.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-    	pid = IDx / (int)vertexParts.primitiveType;
-    	dev_primitives[pid + curPrimitiveBeginId].v[IDx % (int)vertexParts.primitiveType]
-    		= vertexParts.dev_vertices[vertexParts.dev_indices[IDx]];
+		int n_vertices = vertexParts.primitiveType;
+		int prim_id = IDx / n_vertices + curPrimitiveBeginId;
+		Primitive &primitive = primitives[prim_id];
+		primitive.v[IDx % n_vertices]
+    		= vertexParts.vertices[vertexParts.indices[IDx]];
+		primitive.diffuseTex = vertexParts.diffuseTex;
+		primitive.texHeight = vertexParts.texHeight;
+		primitive.texWidth = vertexParts.texWidth;
     }
-    int id = IDx; //START HERE
-
     // TODO: other primitive types (point, line)
   }
 
@@ -726,6 +724,18 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
       int index = getIndex(i, j, width); // up to (height - 1) * width + (width - 1) = height * width - 1
       glm::vec2 viewPos = glm::vec2(i, j);
       glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+
+
+      // test textures
+      //if (i < primitive.texHeight && j < primitive.texWidth) {
+      //    Fragment &fragment = fragments[index];
+      //    int tid = 3 * getIndex(i, j, primitive.texWidth);
+      //    TextureData *tex = primitive.diffuseTex;
+      //    glm::vec3 texColor(tex[tid + 0], tex[tid + 1], tex[tid + 2]);
+      //    fragment.color = texColor;
+      //}
+      // end texture test
+
       if (isBarycentricCoordInBounds(barycentricCoord)) {
         float depth = getFragmentDepth(barycentricCoord, tri);
         if ((int)depth == depths[index]) {
@@ -733,23 +743,27 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
           Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
           //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+          TextureData *tex = primitive.diffuseTex;
           fragment.viewNor = glm::vec3(0);
-          fragment.texcoord0 = glm::vec2(0);
           fragment.color = glm::vec3(0);
           int k;
           range(k, 0, 3) {
             float weight = barycentricCoord[k];
-            Vertex v = primitive.v[k];
+            Vertex v = primitive.v[k]; // HELP: is this a call to global memory?
             fragment.viewNor += weight * v.viewNor;
-            fragment.texcoord0 += weight * v.texcoord0;
+            int id = index;
+            int x = v.texcoord0.x * primitive.texWidth;
+            int y = v.texcoord0.y * primitive.texHeight;
+            int tid = 3 * getIndex(y, x, primitive.texWidth);
+            TextureData *tex = primitive.diffuseTex;
+            glm::vec3 texColor(tex[tid + 0], tex[tid + 1], tex[tid + 2]);
+            fragment.color += weight * texColor;
           }
+          fragment.color /= 255.0f;
 
           //fragment.viewNor = primitive.v[0].viewNor;
           fragment.viewPos = glm::vec3(viewPos, depth);
 
-          int texIndex = getIndex(fragment.texcoord0.y, fragment.texcoord0.x, p
-          unsigned char tex = primitive.dev_diffuseTex[
-          fragment.color = glm::vec3(1);
         }
       }
     }
@@ -768,10 +782,20 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   glm::vec3 L = glm::normalize(glm::vec3(0, 1, 1));//lightPos - frag.viewPos);
   glm::vec3 V = glm::normalize(-frag.viewPos);
   glm::vec3 H = glm::normalize(L + V);
-  //glm::vec3
-  float preclamp = glm::dot(frag.viewNor, H);
-  float intensity = saturate(glm::dot(frag.viewNor, H)) + 0.1;
-  int id = index;
+  float intensity = saturate(glm::dot(frag.viewNor, H) + 0.2);
+	framebuffer[index] = intensity * frag.color;
+
+  //int id = index;
+  //debugDuck("intensity=%.2f original-color=%.2f,%.2f,%.2f shaded-color=%.2f,%.2f,%.2f\n", 
+  //  intensity,
+  //  frag.color.x,
+  //  frag.color.y,
+  //  frag.color.z,
+  //  intensity * frag.color.x,
+  //  intensity * frag.color.y,
+  //  intensity * frag.color.z
+  //  );
+  //int id = index;
   //debugDuck("preclamp=%f frag.viewNor=%f,%f,%f H=%f,%f,%f\n", 
   //  preclamp,
   //  frag.viewNor.x,
@@ -780,7 +804,7 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   //  H.x,
   //  H.y,
   //  H.z);
-	framebuffer[index] = intensity * frag.color;
+
 }
 
 /**
@@ -864,12 +888,12 @@ void rasterizeFree() {
   auto itEnd(mesh2vertexParts.end());
   for (; it != itEnd; ++it) {
     for (auto p = it->second.begin(); p != it->second.end(); ++p) {
-      cudaFree(p->dev_indices);
-      cudaFree(p->dev_pos);
-      cudaFree(p->dev_normal);
-      cudaFree(p->dev_texcoord0);
-      cudaFree(p->dev_diffuseTex);
-      cudaFree(p->dev_vertices);
+      cudaFree(p->indices);
+      cudaFree(p->pos);
+      cudaFree(p->normal);
+      cudaFree(p->texcoord0);
+      cudaFree(p->diffuseTex);
+      cudaFree(p->vertices);
 
       
       //TODO: release other attributes and materials
