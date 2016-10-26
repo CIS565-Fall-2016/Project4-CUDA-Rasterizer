@@ -8,6 +8,12 @@ CUDA Rasterizer
 
 <table class="image">
 	<tr>
+	<td><img src="renders/duck_turntable.gif"/></td>
+	<td><img src="renders/cow_turntable.gif"/></td>
+	<td><img src="renders/engine_turntable.gif"/></td>
+	<td><img src="renders/truck_turntable.gif"/></td>
+	</tr>
+	<tr>
 	<td><img src="renders/duck-diffuse-texture.png"/></td>
 	<td><img src="renders/uv_coords.png"/></td>
 	<td><img src="renders/texturing_wrong.png"/></td>
@@ -17,8 +23,22 @@ CUDA Rasterizer
 	<td>Diffuse color</td>
 	<td>Testing texture coordinates</td>
 	<td>Incorrect texture reading</td>
+	<td>Fixed textures</td>
 	</tr>
 </table>
+
+## Tiled Rasterization
+
+Tiled rasterization significantly improves performance for scenes with very large triangles close to the camera. In the simple rasterizer where there is one thread per primitive, if the primitive covers the entire screen, the thread has to go through every pixel on the screen. The problem compounds if there are multiple overlapping large triangles. This could be improved if we subdivided triangles into smaller pieces so that multiple threads can handle one large triangle. To accomplish this, we divide the screen into multiple tiles. so that no one thread has to take care of an area greater than `TILE_SIZE * TILE_SIZE`.
+
+In implementing this, because I had many more blocks, it was much more likely for the primitives for a tile to be split between multiple blocks. As a result, the atomicMin solution for depth testing can no longer be used because another block may have changed depth values between the `atomicMin` and the `depth == depths[i]` check immediately after.
+
+I instead used a separate mutex for each pixel. This definitely fixed many of the race conditions. I still ran into problems which I could not figure out, only at very close distances.
+
+![](renders/tiled_race.png)
+
+*Race condition with tiled rasterization*
+
 
 ## Perspective Correct Interpolation
 
@@ -41,6 +61,18 @@ Interpolated texture coordinates are rarely ever exactly aligned with texels. Te
 
 *Performance tests were done using the above render. Unless stated otherwise, reported results are the average over all the frames or a breakdown of per-frame data.*
 
+
+### Tiled Rasterization
+
+![](profiling/tile_notile_comparison.png)
+
+*Comparison of untiled and different degrees of tiled rasterization*
+
+Tiled rasterization only uses three additional registers and yields significant performance improvements at close distances. With untiled rasterization, moving the camera closer to the object seems to exponentially increase the execution time of the rasterization kernel. Using tiles results in near linear performance because the amount of time that a thread can take is bounded by the size of the tile.
+
+![](profiling/tile_comparison.png)
+
+Comparing the performance of different tile sizes is interesting. Using tiles that are too large seem to result in a sort of oscillatory performance behavior. This may just be because of how much the edges of the truck overlap tiles. Tiles that overlap much will probably take longer than those that do not.
 
 ### Constant Memory Camera Matrices
 
