@@ -18,10 +18,11 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define RENDER_DEPTH_ONLY
+//#define RENDER_DEPTH_ONLY
 //#define RENDER_NORMAL_ONLY
-//#define BILINEAR_FILTERING
-//#define BACKFACE_CULLING
+#define BILINEAR_FILTERING
+#define BACKFACE_CULLING
+//#define NOT_USE_TEXTURE
 
 namespace {
 
@@ -48,7 +49,8 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		 glm::vec2 texcoord0;
+		 glm::vec3 color;
+		glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
 		 int texWidth, texHeight;
 		 
@@ -95,7 +97,7 @@ namespace {
 		int diffuseTexWidth;
 		int diffuseTexHeight;
 		// TextureData* dev_specularTex;
-		// TextureData* dev_normalTex;
+		TextureData* dev_normalTex;
 		// ...
 
 		int materialId;
@@ -107,6 +109,7 @@ namespace {
 	};
 
 	struct Material {
+		glm::vec3 diffuse;
 		glm::vec3 ambient;
 		glm::vec3 emission;
 		glm::vec3 specular;
@@ -191,8 +194,13 @@ void render(
 				float specAngle = glm::clamp(glm::dot(halfDir, fragmentBuffer[index].eyeNor), 0.0f, 1.0f);
 				specular = glm::pow(specAngle, (float)materials[materialId].shininess);
 			}
-
-			framebuffer[index] = materials[materialId].ambient * fragmentBuffer[index].color + lambertian * fragmentBuffer[index].color + specular * materials[materialId].specular;
+			glm::vec3 diffuse =
+#ifdef NOT_USE_TEXTURE			
+			materials[materialId].diffuse;
+#else
+			fragmentBuffer[index].color;
+#endif
+			framebuffer[index] = materials[materialId].ambient * diffuse + lambertian * diffuse + specular * materials[materialId].specular;
 
 		} else {
 			framebuffer[index] = fragmentBuffer[index].color;
@@ -601,6 +609,9 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 									checkCUDAError("Set Texture Image data");
 								}
+							} else {
+								auto diff = mat.values.at("diffuse").number_array;
+								material.diffuse = glm::vec3(diff.at(0), diff.at(1), diff.at(2));
 							}
 						}
 
@@ -744,10 +755,10 @@ void _vertexTransformAndAssembly(
 			primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
 			primitive.dev_verticesOut[vid].texWidth = primitive.diffuseTexWidth;
 			primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
-			primitive.dev_verticesOut[vid].materialId = primitive.materialId;
-		} else {
-			primitive.dev_verticesOut[vid].materialId = -1;
-		}
+		} 
+		primitive.dev_verticesOut[vid].materialId = primitive.materialId;
+		primitive.dev_verticesOut[vid].color = glm::vec3(1.0, 1.0, 1.0);
+
 	}
 }
 
@@ -909,14 +920,14 @@ void _rasterize(
 								(int)(uv.t * primitive.v[0].texWidth) * primitive.v[0].texHeight;
 
 							fragmentBuffer[index].color = glm::vec3(
+								texels[3 * texIndex + 2] / 255.0f);
 								texels[3 * texIndex] / 255.0f,
 								texels[3 * texIndex + 1] / 255.0f,
-								texels[3 * texIndex + 2] / 255.0f);
 #endif
 						} 
 						else 
 						{
-							fragmentBuffer[index].color = glm::vec3(1.0f, 1.0f, 1.0f);
+							fragmentBuffer[index].color = primitive.v[0].color;
 						}
 						fragmentBuffer[index].materialId = primitive.v[0].materialId;
 

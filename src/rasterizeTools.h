@@ -36,14 +36,14 @@ AABB getAABBForTriangle(const glm::vec3 tri[3], int w, int h) {
             min(min(tri[0].x, tri[1].x), tri[2].x),
             min(min(tri[0].y, tri[1].y), tri[2].y),
             min(min(tri[0].z, tri[1].z), tri[2].z));
-	//aabb.min.x = glm::clamp(aabb.min.x, 0.0f, (float)w);
-	//aabb.min.y = glm::clamp(aabb.min.y, 0.0f, (float)h);
+	aabb.min.x = glm::clamp(aabb.min.x, 0.0f, (float)w);
+	aabb.min.y = glm::clamp(aabb.min.y, 0.0f, (float)h);
 	aabb.max = glm::vec3(
             max(max(tri[0].x, tri[1].x), tri[2].x),
             max(max(tri[0].y, tri[1].y), tri[2].y),
             max(max(tri[0].z, tri[1].z), tri[2].z));
-	//aabb.max.x = glm::clamp(aabb.max.x, 0.0f, (float)w);
-	//aabb.max.y = glm::clamp(aabb.max.y, 0.0f, (float)h);
+	aabb.max.x = glm::clamp(aabb.max.x, 0.0f, (float)w);
+	aabb.max.y = glm::clamp(aabb.max.y, 0.0f, (float)h);
 	return aabb;
 }
 

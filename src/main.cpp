@@ -9,7 +9,7 @@
 
 
 #include "main.hpp"
-
+#include <chrono>
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
@@ -99,7 +99,9 @@ float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
 float x_angle = 0.0f, y_angle = 0.0f;
 void runCuda() {
-    // Map OpenGL buffer object for writing from CUDA on a single GPU
+	static auto start = std::chrono::system_clock::now();
+
+	// Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
     dptr = NULL;
 
@@ -107,12 +109,16 @@ void runCuda() {
 		scale * ((float)width / (float)height),
 		-scale, scale, 1.0, 1000.0);
 
-	glm::mat4 V = glm::mat4(1.0f);
+	glm::mat4 V = glm::translate(glm::vec3(0, 0, 0));
 
+	auto now = std::chrono::system_clock::now();
+	float timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+	// turn table
 	glm::mat4 M =
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
 		* glm::rotate(x_angle, glm::vec3(1.0f, 0.0f, 0.0f))
-		* glm::rotate(y_angle, glm::vec3(0.0f, 1.0f, 0.0f));
+		* glm::rotate(y_angle + timeElapsed / 1000.0f, glm::vec3(0.0f, 1.0f, 0.0f))
+		* glm::scale(glm::vec3(15, 15, 15));
 
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
