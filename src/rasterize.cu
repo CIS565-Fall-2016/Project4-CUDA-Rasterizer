@@ -144,7 +144,10 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
 		auto & frag = fragmentBuffer[index];
-		framebuffer[index] = frag.color * glm::max(0.0f, glm::dot(frag.eyeNor, glm::vec3(1.0f)));
+		glm::vec3 H = glm::normalize(frag.eyePos + glm::vec3(1.0f));
+		float NDotH = glm::dot(frag.eyeNor, H);
+		framebuffer[index] = frag.color * glm::max(0.0f, glm::dot(frag.eyeNor, glm::normalize(glm::vec3(1.0f)))) +
+			NDotH * NDotH * NDotH * frag.color;
 		//framebuffer[index] = frag.eyeNor;
 	}
 }
