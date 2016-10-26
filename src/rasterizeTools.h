@@ -27,20 +27,24 @@ glm::vec3 multiplyMV(glm::mat4 m, glm::vec4 v) {
 
 // CHECKITOUT
 /**
- * Finds the axis aligned bounding box for a given triangle.
+ * Finds the axis aligned bounding box for a given triangle within a given bound w and h.
  */
 __host__ __device__ static
-AABB getAABBForTriangle(const glm::vec3 tri[3]) {
+AABB getAABBForTriangle(const glm::vec3 tri[3], int w, int h) {
     AABB aabb;
     aabb.min = glm::vec3(
             min(min(tri[0].x, tri[1].x), tri[2].x),
             min(min(tri[0].y, tri[1].y), tri[2].y),
             min(min(tri[0].z, tri[1].z), tri[2].z));
-    aabb.max = glm::vec3(
+	//aabb.min.x = glm::clamp(aabb.min.x, 0.0f, (float)w);
+	//aabb.min.y = glm::clamp(aabb.min.y, 0.0f, (float)h);
+	aabb.max = glm::vec3(
             max(max(tri[0].x, tri[1].x), tri[2].x),
             max(max(tri[0].y, tri[1].y), tri[2].y),
             max(max(tri[0].z, tri[1].z), tri[2].z));
-    return aabb;
+	//aabb.max.x = glm::clamp(aabb.max.x, 0.0f, (float)w);
+	//aabb.max.y = glm::clamp(aabb.max.y, 0.0f, (float)h);
+	return aabb;
 }
 
 // CHECKITOUT
@@ -100,6 +104,13 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
            + barycentricCoord.z * tri[2].z);
 }
 
+__host__ __device__ static
+glm::vec2 getTexccordAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec2 texcoord[3]) {
+	return (barycentricCoord.x * texcoord[0]
+		+ barycentricCoord.y * texcoord[1]
+		+ barycentricCoord.z * texcoord[2]);
+}
+
 /**
 * For a given barycentric coordinate, compute the corresponding perspective correct z 
 * position (i.e. depth) on the triangle.
@@ -118,10 +129,10 @@ float getPerspectiveCorrectZAtCoordinate(const glm::vec3 screenSpaceBarycentric,
 */
 __host__ __device__ static
 glm::vec3 getPerspectiveCorrectNormalAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3], const glm::vec3 triNormals[3], float depth) {
-	return depth * glm::vec3(
+	return glm::normalize(depth * glm::vec3(
 		barycentricCoord.x * triNormals[0] / tri[0].z +
 		barycentricCoord.y * triNormals[1] / tri[1].z +
-		barycentricCoord.z * triNormals[2] / tri[2].z);
+		barycentricCoord.z * triNormals[2] / tri[2].z));
 }
 
 /**
@@ -150,3 +161,4 @@ float fatomicMin(float *addr, float value)
 	
 	return old;
 }
+

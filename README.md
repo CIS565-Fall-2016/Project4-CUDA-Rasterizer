@@ -14,6 +14,8 @@ CUDA Rasterizer
 project, and we will not be able to grade you without a good README.
 
 
+Added a new material struct. Passing by materials.
+
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)

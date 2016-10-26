@@ -18,8 +18,10 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-//#define RENDER_DEPTH_ONLY
+#define RENDER_DEPTH_ONLY
 //#define RENDER_NORMAL_ONLY
+//#define BILINEAR_FILTERING
+//#define BACKFACE_CULLING
 
 namespace {
 
@@ -46,11 +48,11 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		// glm::vec3 col;
 		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
 		 int texWidth, texHeight;
-		// ...
+		 
+		 int materialId;
 	};
 
 	struct Primitive {
@@ -67,13 +69,12 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;
-		 //VertexAttributeTexcoord texcoord0;
 
 #ifdef RENDER_DEPTH_ONLY
 		 float depth;
 #endif
-		 //TextureData* dev_diffuseTex;
-		// ...
+		 int materialId;
+
 	};
 
 	struct PrimitiveDevBufPointers {
@@ -97,10 +98,19 @@ namespace {
 		// TextureData* dev_normalTex;
 		// ...
 
+		int materialId;
+
 		// Vertex Out, vertex used for rasterization, this is changing every frame
 		VertexOut* dev_verticesOut;
 
 		// TODO: add more attributes when needed
+	};
+
+	struct Material {
+		glm::vec3 ambient;
+		glm::vec3 emission;
+		glm::vec3 specular;
+		float shininess;
 	};
 
 }
@@ -115,6 +125,7 @@ static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
+static Material *dev_materials = NULL;
 
 static float * dev_depth = NULL;	// you might need this buffer when doing depth test
 
@@ -144,18 +155,51 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 * Writes fragment colors to the framebuffer
 */
 __global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+void render(
+	int w, 
+	int h, 
+	Fragment *fragmentBuffer, 
+	glm::vec3 *framebuffer, 
+	Material* materials
+	)
+{
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
 
     if (x < w && y < h) {
+
 #ifdef RENDER_DEPTH_ONLY
 		framebuffer[index] = glm::vec3(fragmentBuffer[index].depth, fragmentBuffer[index].depth, fragmentBuffer[index].depth);
 #elif defined(RENDER_NORMAL_ONLY)
 		framebuffer[index] = glm::abs(fragmentBuffer[index].eyeNor);
 #else // Render with colors
-		framebuffer[index] = fragmentBuffer[index].color;
+
+		int materialId = fragmentBuffer[index].materialId;
+		if (materialId != -1) {
+			glm::vec3 lightDirection = glm::vec3(-3.0f, 5.0f, 5.0f) - fragmentBuffer[index].eyePos;
+
+		// Blinn-phong from Wikipedia: https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+    	float lambertian = glm::clamp(
+			glm::dot(fragmentBuffer[index].eyeNor, lightDirection), 
+				0.0f, 1.0f);
+		float specular = 0;
+
+			if (lambertian > 0.0f) {
+				glm::vec3 viewDirection = glm::normalize(-fragmentBuffer[index].eyePos);
+				glm::vec3 halfDir = glm::normalize(lightDirection + viewDirection);
+				float specAngle = glm::clamp(glm::dot(halfDir, fragmentBuffer[index].eyeNor), 0.0f, 1.0f);
+				specular = glm::pow(specAngle, (float)materials[materialId].shininess);
+			}
+
+			framebuffer[index] = materials[materialId].ambient * fragmentBuffer[index].color + lambertian * fragmentBuffer[index].color + specular * materials[materialId].specular;
+
+		} else {
+			framebuffer[index] = fragmentBuffer[index].color;
+		}
+
+
+
 #endif
 		// TODO: add your fragmentt shader code here
     }
@@ -308,8 +352,10 @@ void traverseNode (
 void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 	totalNumPrimitives = 0;
-
 	std::map<std::string, BufferByte*> bufferViewDevPointers;
+	
+	int materialId = -1;
+	std::vector<Material> materials;
 
 	// 1. copy all `bufferViews` to device memory
 	{
@@ -534,6 +580,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					TextureData* dev_diffuseTex = NULL;
 					int diffuseTexWidth = 0;
 					int diffuseTexHeight = 0;
+					Material material;
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -560,6 +607,27 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						// TODO: write your code for other materails
 						// You may have to take a look at tinygltfloader
 						// You can also use the above code loading diffuse material as a start point 
+						if (mat.values.find("ambient") != mat.values.end()) {
+							auto amb = mat.values.at("ambient").number_array;
+							material.ambient = glm::vec3(amb.at(0), amb.at(1), amb.at(2));
+
+						}
+						if (mat.values.find("emission") != mat.values.end()) {
+							auto em = mat.values.at("emission").number_array;
+							material.emission = glm::vec3(em.at(0), em.at(1), em.at(2));
+
+						}
+						if (mat.values.find("specular") != mat.values.end()) {
+							auto spec = mat.values.at("specular").number_array;
+							material.specular = glm::vec3(spec.at(0), spec.at(1), spec.at(2));
+
+						}
+						if (mat.values.find("shininess") != mat.values.end()) {
+							material.shininess = mat.values.at("shininess").number_array.at(0);
+						}
+
+						materials.push_back(material);
+						++materialId;
 					}
 
 
@@ -593,7 +661,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						dev_diffuseTex,
 						diffuseTexWidth,
 						diffuseTexHeight,
-
+						
+						materialId,
 						dev_vertexOut	//VertexOut
 					});
 
@@ -613,6 +682,11 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 		cudaMalloc(&dev_primitives, totalNumPrimitives * sizeof(Primitive));
 	}
 	
+	// 4. Malloc for dev_materials
+	{
+		cudaMalloc(&dev_materials, materials.size() * sizeof(Material));
+		cudaMemcpy(dev_materials, materials.data(), materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
+	}
 
 	// Finally, cudaFree raw dev_bufferViews
 	{
@@ -664,8 +738,16 @@ void _vertexTransformAndAssembly(
 		eyeSpacePosition /= eyeSpacePosition.w;
 		primitive.dev_verticesOut[vid].eyePos = glm::vec3(eyeSpacePosition);
 		primitive.dev_verticesOut[vid].pos = transformedPosition;
-		primitive.dev_verticesOut[vid].texWidth = primitive.diffuseTexWidth;
-		primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
+
+		if (primitive.dev_diffuseTex != NULL) {
+			primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
+			primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
+			primitive.dev_verticesOut[vid].texWidth = primitive.diffuseTexWidth;
+			primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
+			primitive.dev_verticesOut[vid].materialId = primitive.materialId;
+		} else {
+			primitive.dev_verticesOut[vid].materialId = -1;
+		}
 	}
 }
 
@@ -697,6 +779,39 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+// From Wikipedia: https://www.metromile.com/dashboard/password-reset?t=1fci1i9tg8vg6dlpa24raj7csd
+__device__ __host__
+glm::vec3 getBilinearFilteredPixelColor(TextureData* texels, glm::vec2 uv, int texWidth, int texHeight)
+{
+	float u = uv.s * texWidth - 0.5f;
+	float v = uv.t * texHeight - 0.5f;
+	int x = glm::floor(u);
+	int y = glm::floor(v);
+	float uRatio = u - x;
+	float vRatio = v - y;
+	float uOpposite = 1 - uRatio;
+	float vOpposite = 1 - vRatio;
+	int i0 = 3 * (x + y * texWidth);
+	int i1 = 3 * ((x + 1) + y * texWidth);
+	int i2 = 3 * (x + (y + 1) * texWidth);
+	int i3 = 3 * ((x + 1) + (y + 1) * texWidth);
+
+	float red = (texels[i0] * uOpposite +
+		texels[i1] * uRatio) * vOpposite +
+		(texels[i2] * uOpposite +
+		texels[i3] * uRatio) * vRatio;
+	float green = (texels[i0 + 1] * uOpposite +
+		texels[i1 + 1] * uRatio) * vOpposite +
+		(texels[i2 + 1] * uOpposite +
+		texels[i3 + 1] * uRatio) * vRatio;
+	float blue = (texels[i0 + 2] * uOpposite +
+		texels[i1 + 2] * uRatio) * vOpposite +
+		(texels[i2 + 2] * uOpposite +
+		texels[i3 + 2] * uRatio) * vRatio;
+
+	return glm::vec3(red, green, blue) / 255.0f;
+}
+
 __global__
 void _rasterize(
 	int numPrimitives, 
@@ -712,6 +827,13 @@ void _rasterize(
 	if (pid < numPrimitives) {
 		Primitive primitive = primitives[pid];
 
+#ifdef BACKFACE_CULLING
+		// Backface culling
+		if (glm::dot(primitive.v[0].eyeNor, -primitive.v[0].eyePos) < 0.0f) {
+			return;
+		}
+#endif
+
 		// Compute bounding box for triangle
 		glm::vec3 tri[3] = 
 		{
@@ -719,7 +841,7 @@ void _rasterize(
 			glm::vec3(primitive.v[1].pos),
 			glm::vec3(primitive.v[2].pos)
 		};
-		AABB bbox = getAABBForTriangle(tri);
+		AABB bbox = getAABBForTriangle(tri, width, height);
 
 		// Loop through each fragment and check barycentric coordinates in bound
 		for (int x = bbox.min.x; x <= bbox.max.x; ++x) {
@@ -760,12 +882,13 @@ void _rasterize(
 							primitive.v[2].texcoord0
 						};
 
-						glm::vec2 perspectiveCorrectTexcoord = getPerspectiveCorrectTexcoordAtCoordinate(
+						glm::vec2 uv = getPerspectiveCorrectTexcoordAtCoordinate(
 							screenSpaceBarycentric,
 							tri,
 							texcoords,
 							depth
 							);
+						
 
 						// Write out fragment values
 #ifdef  RENDER_DEPTH_ONLY
@@ -774,13 +897,30 @@ void _rasterize(
 						fragmentBuffer[index].eyeNor = perspectiveCorrectNormal;
 
 						// If there is texture data, use it
-						if (primitive.v[0].dev_diffuseTex != nullptr) {
-							int texIndex = perspectiveCorrectTexcoord.x + perspectiveCorrectTexcoord.y * primitive.v[0].texWidth;
-							TextureData* texData = primitive.v[0].dev_diffuseTex;
-							fragmentBuffer[index].color = glm::vec3(texData[texIndex * 3], texData[texIndex * 3 + 1], texData[texIndex * 3 + 2]);
-						} else {
+						if (primitive.v[0].dev_diffuseTex != nullptr) 
+						{
+							TextureData* texels = primitive.v[0].dev_diffuseTex;
+
+#ifdef BILINEAR_FILTERING
+							fragmentBuffer[index].color = getBilinearFilteredPixelColor(texels, uv, primitive.v[0].texWidth, primitive.v[0].texHeight);
+#else
+							int texIndex =
+								(int)(uv.s * primitive.v[0].texWidth) +
+								(int)(uv.t * primitive.v[0].texWidth) * primitive.v[0].texHeight;
+
+							fragmentBuffer[index].color = glm::vec3(
+								texels[3 * texIndex] / 255.0f,
+								texels[3 * texIndex + 1] / 255.0f,
+								texels[3 * texIndex + 2] / 255.0f);
+#endif
+						} 
+						else 
+						{
 							fragmentBuffer[index].color = glm::vec3(1.0f, 1.0f, 1.0f);
 						}
+						fragmentBuffer[index].materialId = primitive.v[0].materialId;
+
+
 					}
 				}
 			}
@@ -848,11 +988,12 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 			width, 
 			height
 			);
+		checkCUDAError("rasterization");
 	}
 
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, dev_materials);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
@@ -884,6 +1025,9 @@ void rasterizeFree() {
 	}
 
 	////////////
+
+	cudaFree(dev_materials);
+	dev_materials = NULL;
 
     cudaFree(dev_primitives);
     dev_primitives = NULL;
