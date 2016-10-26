@@ -126,10 +126,10 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
  * on the triangle.
  */
 __host__ __device__ static
-glm::vec2 getVec2AtCoordinate(const glm::vec3 barycentricCoord, const glm::vec2 input[3]) {
-	 return barycentricCoord.x * input[0]
-	 		+ barycentricCoord.y * input[1]
-			+ barycentricCoord.z * input[2];
+glm::vec2 getVec2AtCoordinate(const glm::vec3 &baryCoord, const glm::vec2 input[3]) {
+	 return baryCoord.x * input[0]
+	 		+ baryCoord.y * input[1]
+			+ baryCoord.z * input[2];
 }
 
 /**
@@ -200,7 +200,7 @@ glm::vec3 getColorFromTextureAtCoordinateBilinear(const unsigned char *pTex,
  * corrected texcoord on the triangle.
  */
 __host__ __device__ static
-glm::vec2 getPerspectiveCorrectedTexcoordAtCoordinate(const glm::vec3 baryCoord,
+glm::vec2 getPerspectiveCorrectedTexcoordAtCoordinate(const glm::vec3 &baryCoord,
 		const glm::vec2 _texcoord[3], const float triDepth_1[3]) {
 	const glm::vec2 texcoord[3] = {
 		_texcoord[0] * triDepth_1[0],

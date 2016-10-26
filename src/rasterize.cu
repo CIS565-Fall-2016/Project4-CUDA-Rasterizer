@@ -163,21 +163,24 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	// buffer = fragment.eyeNor; return;// display normal
 	// buffer = glm::vec3(fragment.texcoord0, 0.f); return;// display texcoord
 #if TRIANGLE
+	const glm::vec3 L = glm::normalize(lightPos - fragment.eyePos);
+	const glm::vec3 &N = fragment.eyeNor;
+	const glm::vec3 V = glm::normalize(-fragment.eyePos);
+	const glm::vec3 H = glm::normalize(V + L);
+	glm::vec3 baseColor(1.f);
+
 	if (fragment.dev_diffuseTex != NULL) {
-		const glm::vec3 diffuseColor = getColorFromTextureAtCoordinate(
+		// has color map
+		baseColor = getColorFromTextureAtCoordinate(
 				fragment.dev_diffuseTex, fragment.texcoord0, fragment.diffuseTexWidth,
 				fragment.diffuseTexHeight, fragment.diffuseTexStride);
-		const glm::vec3 L = glm::normalize(lightPos - fragment.eyePos);
-		const glm::vec3 &N = fragment.eyeNor;
-		const glm::vec3 V = glm::normalize(-fragment.eyePos);
-		const glm::vec3 H = glm::normalize(V + L);
-
-		// lambert
-		buffer = max(0.f, glm::dot(L, N)) * diffuseColor;
-
-		// Blinn-Phong
-		buffer += glm::vec3(pow(max(0.f, glm::dot(N, H)), 200.f));
 	}
+
+	// lambert
+	buffer = max(0.f, glm::dot(L, N)) * baseColor;
+
+	// Blinn-Phong
+	buffer += glm::vec3(pow(max(0.f, glm::dot(N, H)), 200.f));
 #elif LINE
 	buffer = fragment.color;
 #elif POINT
