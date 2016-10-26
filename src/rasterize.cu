@@ -622,7 +622,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 }
 
 
-
 __global__ 
 void _vertexTransformAndAssembly(
 	int numVertices, 
@@ -639,12 +638,19 @@ void _vertexTransformAndAssembly(
 		// Then divide the pos by its w element to transform into NDC space
 		// Finally transform x and y to viewport space
 
-		// TODO: Apply vertex assembly here
-		// Assemble all attribute arraies into the primitive array
+		glm::vec4 pos = glm::vec4(primitive.dev_position[vid], 1.0);
+		pos = MVP * pos;
 		
+		pos.x /= pos.w;
+		pos.y /= pos.w;
+		pos.z /= pos.w;
+
+		// TODO: Apply vertex assembly here
+		// Assemble all attribute arrays into the primitive array
+
+		primitive.dev_verticesOut[vid].pos = pos;
 	}
 }
-
 
 
 static int curPrimitiveBeginId = 0;
@@ -660,21 +666,54 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
 
+			// TODO: other primitive types (point, line)
+		}
 
-		// TODO: other primitive types (point, line)
 	}
-	
 }
 
+__global__
+void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *fragmentbuffer ) {
+	// primitive id
+	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pid < t) {
+		Primitive p = primitives[pid];
+		
+		glm::vec3 tri[3];
+		tri[0] = glm::vec3(p.v[0].pos);
+		tri[1] = glm::vec3(p.v[1].pos);
+		tri[2] = glm::vec3(p.v[2].pos);
 
+		for (int i = 0; i < h; i++) {
+			for (int j = 0; j < w; j++) {
+				// Check if in bounding box
+				glm::vec2 ndc(2.0f * ((float)j / (float)w) - 0.5f,
+							  2.0f * ((float)i / (float)h) - 0.5f);
 
+				AABB bb = getAABBForTriangle(tri);
+				if ((ndc.x < bb.min.x && ndc.y < bb.min.y) ||
+					(ndc.x > bb.max.x && ndc.y > bb.max.y)) {
+					continue;
+					//printf("Min bb: %f, %f - P: %f, %f\n", bb.min.x, bb.min.y, ndc.x, ndc.y);
+				}
+
+				glm::vec3 bary = calculateBarycentricCoordinate(tri, ndc);
+
+				if (isBarycentricCoordInBounds(bary)) {
+					fragmentbuffer[i * h + j].color = glm::vec3((float)pid / (float)t, 0.0f, 0.0f);
+				}
+			}
+		}
+
+	}
+
+}
 /**
  * Perform rasterization.
  */
@@ -688,9 +727,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	// (See README for rasterization pipeline outline.)
 
 	// Vertex Process & primitive assembly
+	dim3 numThreadsPerBlock(128);
+
 	{
 		curPrimitiveBeginId = 0;
-		dim3 numThreadsPerBlock(128);
 
 		auto it = mesh2PrimitivesMap.begin();
 		auto itEnd = mesh2PrimitivesMap.end();
@@ -722,8 +762,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
-	// TODO: rasterize
-
+	// Rasterize
+	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	
+	_rasterize_scanlines << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height,
+		dev_primitives, dev_fragmentBuffer);
 
 
     // Copy depthbuffer colors into framebuffer
