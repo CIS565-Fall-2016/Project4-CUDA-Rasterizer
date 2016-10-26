@@ -144,9 +144,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
 		auto & frag = fragmentBuffer[index];
-		framebuffer[index] = frag.color * glm::max(0.0f, glm::dot(frag.eyeNor, glm::vec3(-1.0f)));
-		framebuffer[index] = frag.eyeNor + glm::vec3(0.5f,0.0f,0.0f);
-    }
+		framebuffer[index] = frag.color * glm::max(0.0f, glm::dot(frag.eyeNor, glm::vec3(1.0f)));
+		//framebuffer[index] = frag.eyeNor;
+	}
 }
 
 /**
@@ -703,24 +703,26 @@ __global__ void _rasterize(
 	if (pid > totalNumPrimitives) {
 		return;
 	}
+	
+	Primitive & prim = dev_primitives[pid];
 	const glm::vec3 tri[3] = {
-		glm::vec3(dev_primitives[pid].v[0].pos),
-		glm::vec3(dev_primitives[pid].v[1].pos),
-		glm::vec3(dev_primitives[pid].v[2].pos)
+		glm::vec3(prim.v[0].pos),
+		glm::vec3(prim.v[1].pos),
+		glm::vec3(prim.v[2].pos)
 	};
 	AABB aabb = getAABBForTriangle(tri);
-	int maxx = glm::clamp(0, width - 1, (int) aabb.max.x),
-		maxy = glm::clamp(0, height - 1, (int) aabb.max.y);
+	int maxx = glm::clamp(0, width, ((int) aabb.max.x) + 1),
+		maxy = glm::clamp(0, height, ((int) aabb.max.y) + 1);
 	int fid;
-	for (int i = glm::clamp(0, width - 1, (int)aabb.min.x); i < maxx; i++) {
-		for (int j = glm::clamp(0, height - 1, (int)aabb.min.y); j < maxy; j++) {
+	for (int i = glm::clamp(0, width, (int)aabb.min.x); i < maxx; i++) {
+		for (int j = glm::clamp(0, height, (int)aabb.min.y); j < maxy; j++) {
 			fid = (height - j - 1) * width + (width - i - 1);
 			glm::vec3 barycentric = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
 			if (isBarycentricCoordInBounds(barycentric)) {
 				float z = glm::dot(barycentric, glm::vec3(
-					dev_primitives[pid].v[0].pos.z, 
-					dev_primitives[pid].v[1].pos.z, 
-					dev_primitives[pid].v[2].pos.z)
+					prim.v[0].pos.z, 
+					prim.v[1].pos.z, 
+					prim.v[2].pos.z)
 				);
 				bool isSet;
 				do {
@@ -728,15 +730,15 @@ __global__ void _rasterize(
 					if (isSet) {
 						if (z < dev_depth[fid]) {
 							dev_depth[fid] = z;
-							dev_fragmentBuffer[fid].color = glm::vec3(1.0f, 1.0f, 1.0f);
+							dev_fragmentBuffer[fid].color = glm::vec3(1.0f);
 							dev_fragmentBuffer[fid].eyePos = glm::mat3(
-								dev_primitives[pid].v[0].eyePos,
-								dev_primitives[pid].v[1].eyePos,
-								dev_primitives[pid].v[2].eyePos) * barycentric;
-							dev_fragmentBuffer[fid].eyeNor = glm::normalize(glm::cross(
-								dev_primitives[pid].v[1].eyeNor - dev_primitives[pid].v[0].eyeNor,
-								dev_primitives[pid].v[2].eyeNor - dev_primitives[pid].v[0].eyeNor
-								));
+								prim.v[0].eyePos,
+								prim.v[1].eyePos,
+								prim.v[2].eyePos) * barycentric;
+							dev_fragmentBuffer[fid].eyeNor =
+								barycentric.x * prim.v[0].eyeNor +
+								barycentric.y * prim.v[1].eyeNor +
+								barycentric.z * prim.v[2].eyeNor;
 						}
 					}
 					if (isSet) {
