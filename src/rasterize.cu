@@ -21,8 +21,9 @@
 //#define RENDER_DEPTH_ONLY
 //#define RENDER_NORMAL_ONLY
 #define BILINEAR_FILTERING
-#define BACKFACE_CULLING
+//#define BACKFACE_CULLING
 //#define NOT_USE_TEXTURE
+#define USE_K_BUFFER
 
 namespace {
 
@@ -49,8 +50,8 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		 glm::vec3 color;
-		glm::vec2 texcoord0;
+		 glm::vec4 color;
+		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
 		 int texWidth, texHeight;
 		 
@@ -63,7 +64,7 @@ namespace {
 	};
 
 	struct Fragment {
-		glm::vec3 color;
+		glm::vec4 color;
 
 		// TODO: add new attributes to your Fragment
 		// The attributes listed below might be useful, 
@@ -97,7 +98,7 @@ namespace {
 		int diffuseTexWidth;
 		int diffuseTexHeight;
 		// TextureData* dev_specularTex;
-		TextureData* dev_normalTex;
+		// TextureData* dev_normalTex;
 		// ...
 
 		int materialId;
@@ -109,11 +110,12 @@ namespace {
 	};
 
 	struct Material {
-		glm::vec3 diffuse;
-		glm::vec3 ambient;
-		glm::vec3 emission;
-		glm::vec3 specular;
+		glm::vec4 diffuse;
+		glm::vec4 ambient;
+		glm::vec4 emission;
+		glm::vec4 specular;
 		float shininess;
+		float transparency;
 	};
 
 }
@@ -127,27 +129,29 @@ static int height = 0;
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
-static glm::vec3 *dev_framebuffer = NULL;
+static glm::vec4 *dev_framebuffer = NULL;
 static Material *dev_materials = NULL;
 
-static float * dev_depth = NULL;	// you might need this buffer when doing depth test
-
+static float * dev_depth = NULL;	
+static glm::vec4 * dev_depthAccum = NULL; // k-buffer accumulate
+static float * dev_depthRevealage = NULL; // k-buffer revealage
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
 __global__ 
-void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
+void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec4 *image) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-    int index = x + (y * w);
+	int index = x + (y * w);
 
     if (x < w && y < h) {
-        glm::vec3 color;
+        glm::vec4 color;
         color.x = glm::clamp(image[index].x, 0.0f, 1.0f) * 255.0;
         color.y = glm::clamp(image[index].y, 0.0f, 1.0f) * 255.0;
         color.z = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
-        // Each thread writes one pixel location in the texture (textel)
-        pbo[index].w = 0;
+		color.w = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
+		// Each thread writes one pixel location in the texture (textel)
+        pbo[index].w = color.w;
         pbo[index].x = color.x;
         pbo[index].y = color.y;
         pbo[index].z = color.z;
@@ -162,7 +166,10 @@ void render(
 	int w, 
 	int h, 
 	Fragment *fragmentBuffer, 
-	glm::vec3 *framebuffer, 
+	glm::vec4 *framebuffer, 
+	float* depth,
+	glm::vec4 *depthAccum, // k-buffer accumulate
+	float* depthRevealage, // k-buffer revealage
 	Material* materials
 	)
 {
@@ -194,7 +201,7 @@ void render(
 				float specAngle = glm::clamp(glm::dot(halfDir, fragmentBuffer[index].eyeNor), 0.0f, 1.0f);
 				specular = glm::pow(specAngle, (float)materials[materialId].shininess);
 			}
-			glm::vec3 diffuse =
+			glm::vec4 diffuse =
 #ifdef NOT_USE_TEXTURE			
 			materials[materialId].diffuse;
 #else
@@ -202,14 +209,26 @@ void render(
 #endif
 			framebuffer[index] = materials[materialId].ambient * diffuse + lambertian * diffuse + specular * materials[materialId].specular;
 
+
 		} else {
 			framebuffer[index] = fragmentBuffer[index].color;
 		}
 
+#ifdef USE_K_BUFFER						
+		framebuffer[index].a *= (1.0f - glm::clamp((framebuffer[index].r + framebuffer[index].g + framebuffer[index].b) * (1.0f / 3.0f), 0.0f, 1.0f));
+
+		float a = glm::min(1.0f, framebuffer[index].a) * 8.0 + 0.01;
+		float b = -depth[index] * 0.95f + 1.0f;
+
+		float w = glm::clamp(a * a * a * 1e8 * b * b * b, 1e-2, 3e2);
+		glm::vec4 accum = framebuffer[index] * w;
+		float revealaage = framebuffer[index].a;
 
 
-#endif
-		// TODO: add your fragmentt shader code here
+#endif // USE_K_BUFFER
+
+
+#endif // End RENDER_DEPTH_ONLY, RENDER_NORMAL_ONLYr
     }
 }
 
@@ -223,11 +242,17 @@ void rasterizeInit(int w, int h) {
 	cudaMalloc(&dev_fragmentBuffer, width * height * sizeof(Fragment));
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
     cudaFree(dev_framebuffer);
-    cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
-    cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+    cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec4));
+    cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec4));
     
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(float));
+
+	cudaFree(dev_depthAccum);
+	cudaMalloc(&dev_depthAccum, width * height * sizeof(glm::vec4));
+
+	cudaFree(dev_depthRevealage);
+	cudaMalloc(&dev_depthRevealage, width * height * sizeof(float));
 
 	checkCUDAError("rasterizeInit");
 }
@@ -611,7 +636,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 								}
 							} else {
 								auto diff = mat.values.at("diffuse").number_array;
-								material.diffuse = glm::vec3(diff.at(0), diff.at(1), diff.at(2));
+								material.diffuse = glm::vec4(diff.at(0), diff.at(1), diff.at(2), diff.at(3));
 							}
 						}
 
@@ -620,21 +645,27 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						// You can also use the above code loading diffuse material as a start point 
 						if (mat.values.find("ambient") != mat.values.end()) {
 							auto amb = mat.values.at("ambient").number_array;
-							material.ambient = glm::vec3(amb.at(0), amb.at(1), amb.at(2));
+							material.ambient = glm::vec4(amb.at(0), amb.at(1), amb.at(2), amb.at(3));
 
 						}
 						if (mat.values.find("emission") != mat.values.end()) {
 							auto em = mat.values.at("emission").number_array;
-							material.emission = glm::vec3(em.at(0), em.at(1), em.at(2));
+							material.emission = glm::vec4(em.at(0), em.at(1), em.at(2), em.at(3));
 
 						}
 						if (mat.values.find("specular") != mat.values.end()) {
 							auto spec = mat.values.at("specular").number_array;
-							material.specular = glm::vec3(spec.at(0), spec.at(1), spec.at(2));
+							material.specular = glm::vec4(spec.at(0), spec.at(1), spec.at(2), spec.at(3));
 
 						}
 						if (mat.values.find("shininess") != mat.values.end()) {
 							material.shininess = mat.values.at("shininess").number_array.at(0);
+						}
+
+						if (mat.values.find("transparency") != mat.values.end()) {
+							material.transparency = mat.values.at("transparency").number_array.at(0);
+						} else {
+							material.transparency = 1.0f;
 						}
 
 						materials.push_back(material);
@@ -757,7 +788,7 @@ void _vertexTransformAndAssembly(
 			primitive.dev_verticesOut[vid].texHeight = primitive.diffuseTexHeight;
 		} 
 		primitive.dev_verticesOut[vid].materialId = primitive.materialId;
-		primitive.dev_verticesOut[vid].color = glm::vec3(1.0, 1.0, 1.0);
+		primitive.dev_verticesOut[vid].color = glm::vec4(1.0, 1.0, 1.0, 1.0f);
 
 	}
 }
@@ -792,7 +823,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 
 // From Wikipedia: https://www.metromile.com/dashboard/password-reset?t=1fci1i9tg8vg6dlpa24raj7csd
 __device__ __host__
-glm::vec3 getBilinearFilteredPixelColor(TextureData* texels, glm::vec2 uv, int texWidth, int texHeight)
+glm::vec4 getBilinearFilteredPixelColor(TextureData* texels, glm::vec2 uv, int texWidth, int texHeight)
 {
 	float u = uv.s * texWidth - 0.5f;
 	float v = uv.t * texHeight - 0.5f;
@@ -820,7 +851,7 @@ glm::vec3 getBilinearFilteredPixelColor(TextureData* texels, glm::vec2 uv, int t
 		(texels[i2 + 2] * uOpposite +
 		texels[i3 + 2] * uRatio) * vRatio;
 
-	return glm::vec3(red, green, blue) / 255.0f;
+	return glm::vec4(red, green, blue, 1.0f) / 255.0f;
 }
 
 __global__
@@ -887,20 +918,21 @@ void _rasterize(
 							depth);
 
 						// Interpolate texture coords
-						glm::vec2 texcoords[3] = {
-							primitive.v[0].texcoord0,
-							primitive.v[1].texcoord0,
-							primitive.v[2].texcoord0
-						};
+						glm::vec2 uv;
+						if (primitive.v[0].dev_diffuseTex != nullptr) {
+							glm::vec2 texcoords[3] = {
+								primitive.v[0].texcoord0,
+								primitive.v[1].texcoord0,
+								primitive.v[2].texcoord0
+							};
 
-						glm::vec2 uv = getPerspectiveCorrectTexcoordAtCoordinate(
-							screenSpaceBarycentric,
-							tri,
-							texcoords,
-							depth
-							);
-						
-
+							uv = getPerspectiveCorrectTexcoordAtCoordinate(
+								screenSpaceBarycentric,
+								tri,
+								texcoords,
+								depth
+								);
+						}
 						// Write out fragment values
 #ifdef  RENDER_DEPTH_ONLY
 						fragmentBuffer[index].depth = fabs(depth);
@@ -985,6 +1017,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	}
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+	cudaMemset(dev_depthAccum, 0, width * height * sizeof(glm::vec4));
+	cudaMemset(dev_depthRevealage, 1, width * height * sizeof(float));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// Rasterize
@@ -1004,7 +1038,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, dev_materials);
+	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, dev_depth, dev_depthAccum, dev_depthRevealage, dev_materials);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
@@ -1052,5 +1086,11 @@ void rasterizeFree() {
 	cudaFree(dev_depth);
 	dev_depth = NULL;
 
-    checkCUDAError("rasterize Free");
+	cudaFree(dev_depthRevealage);
+	dev_depthRevealage = NULL;
+	
+	cudaFree(dev_depthAccum);
+	dev_depthAccum = NULL;
+	
+	checkCUDAError("rasterize Free");
 }

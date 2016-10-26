@@ -162,3 +162,15 @@ float fatomicMin(float *addr, float value)
 	return old;
 }
 
+// Adapted from Morgan McGuire on Implementing Weighted, Blended Order-Independent Transparency 
+// at http://casual-effects.blogspot.com/2015/03/implemented-weighted-blended-order.html
+
+__device__ static
+void kBufferComputeAccumulativeAndRevealageBuffers(
+	glm::vec3 premultipliedColor,
+	float alpha,
+	float depth
+	) 
+{
+
+}
