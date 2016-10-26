@@ -58,6 +58,7 @@ namespace {
 	struct Fragment {
 		glm::vec3 color;
 
+		float depth;
 		// TODO: add new attributes to your Fragment
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
@@ -640,10 +641,11 @@ void _vertexTransformAndAssembly(
 
 		glm::vec4 pos = glm::vec4(primitive.dev_position[vid], 1.0);
 		pos = MVP * pos;
-		
-		pos.x /= pos.w;
-		pos.y /= pos.w;
-		pos.z /= pos.w;
+		float inv_w = 1.0f / pos.w;
+
+		pos.x *= inv_w;
+		pos.y *= inv_w;
+		pos.z *= inv_w;
 
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arrays into the primitive array
@@ -679,7 +681,8 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __global__
-void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *fragmentbuffer ) {
+void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *fragmentbuffer,
+							int *depth_buffer) {
 	// primitive id
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (pid < t) {
@@ -690,29 +693,43 @@ void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *
 		tri[1] = glm::vec3(p.v[1].pos);
 		tri[2] = glm::vec3(p.v[2].pos);
 
-		for (int i = 0; i < h; i++) {
-			for (int j = 0; j < w; j++) {
-				// Check if in bounding box
-				glm::vec2 ndc(2.0f * ((float)j / (float)w) - 0.5f,
-							  2.0f * ((float)i / (float)h) - 0.5f);
+		// Get bounding box
+		AABB bb = getAABBForTriangle(tri);
+		glm::ivec2 min, max;
+		
+		min = glm::ivec2((int)floorf(0.5f * (bb.min.x + 1.0f) * (float)w),
+			             (int)floorf(0.5f * (bb.min.y + 1.0f) * (float)h));
+	
+		max = glm::ivec2((int)ceilf(0.5f * (bb.max.x + 1.0f) * (float)w),
+						 (int)ceilf(0.5f * (bb.max.y + 1.0f) * (float)h));
+	
+		//printf("%f, %f\n", bb.min.x, bb.min.y);
+		for (int i = glm::max(0, min.y); i <= max.y; i++) {
+			for (int j = glm::max(0, min.x); j <= max.x; j++) {
 
-				AABB bb = getAABBForTriangle(tri);
-				if ((ndc.x < bb.min.x && ndc.y < bb.min.y) ||
-					(ndc.x > bb.max.x && ndc.y > bb.max.y)) {
-					continue;
-					//printf("Min bb: %f, %f - P: %f, %f\n", bb.min.x, bb.min.y, ndc.x, ndc.y);
-				}
+				// Convert to NDC
+				glm::vec2 ndc(2.0f * ((float)j / (float)w) - 1.0f,
+							  2.0f * ((float)i / (float)h) - 1.0f);
 
+				// Check if in triangle
 				glm::vec3 bary = calculateBarycentricCoordinate(tri, ndc);
 
 				if (isBarycentricCoordInBounds(bary)) {
-					fragmentbuffer[i * h + j].color = glm::vec3((float)pid / (float)t, 0.0f, 0.0f);
-				}
+					float depth = -getZAtCoordinate(bary, tri);
+					int idepth = (int)(depth * ((float)INT_MAX / 1000.0f));
+
+					// Depth test
+					int index = i * w + j;
+
+					if (atomicMin(&depth_buffer[index], idepth) > idepth) {
+						
+						fragmentbuffer[index].color = glm::vec3((float)pid / t, 0.0f, 0.0f);
+					
+					}
+				}	
 			}
 		}
-
 	}
-
 }
 /**
  * Perform rasterization.
@@ -759,15 +776,17 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
 	
+	// Wipe fragment buffer
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+	
+	// Initialize depth buffer to INT_MAX
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
 	// Rasterize
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 	
 	_rasterize_scanlines << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height,
-		dev_primitives, dev_fragmentBuffer);
-
+		dev_primitives, dev_fragmentBuffer, dev_depth);
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
