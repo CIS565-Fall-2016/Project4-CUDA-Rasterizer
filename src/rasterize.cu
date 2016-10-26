@@ -19,6 +19,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "util/utilityCore.hpp"
 
+#define TRIANGLES 0
+#define LINES 0
+#define POINTS 1
+
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -153,7 +158,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
     if (x < w && y < h) {
         //framebuffer[index] = fragmentBuffer[index].color;
-		glm::vec3 light = glm::normalize(glm::vec3(1, 1, 1));
+		glm::vec3 light = glm::normalize(glm::vec3(10, 10, 10));
 		float costheta = glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f);
 		glm::vec3 diffuse;
 		//framebuffer[index] = diffuse;
@@ -189,7 +194,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
 		}
 		else{
-			framebuffer[index] = fragmentBuffer[index].color * costheta;
+			framebuffer[index] = fragmentBuffer[index].color/* * costheta*/;
 		}
 
     }
@@ -701,10 +706,10 @@ void _vertexTransformAndAssembly(
 		if (primitive.dev_diffuseTex != NULL)
 			primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
 		primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
+		/*primitive.primitiveMode = TINYGLTF_MODE_LINE;
+		primitive.primitiveType = Line;*/
 	}
 }
-
-
 
 static int curPrimitiveBeginId = 0;
 
@@ -726,11 +731,41 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			//dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 			dev_primitives[pid + curPrimitiveBeginId].v[iid % 3] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 		}
+		else if (primitive.primitiveMode == TINYGLTF_MODE_LINE) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
 	}
 	
+}
+
+__device__
+void _rasterizeLine(
+glm::vec3& m, glm::vec3& n,
+int width, int height,
+Fragment* dev_fragmentBuffer){
+
+	//super simplified; to test; change it whatever from _rasterizePrims eventually
+	int minX = glm::min(m.x, n.x);
+	int maxX = glm::max(m.x, n.x);
+	int minY = glm::min(m.y, n.y);
+	int maxY = glm::max(m.y, n.y);
+	glm::vec3 p;
+	int index;
+
+	if (minX < maxX && minY < maxY) {
+		
+		int val = maxX - minX >= maxY - minY ? maxX - minX : maxY - minY;
+
+		for (int i = 0; i <= val; ++i) {
+			p = lerp(static_cast<float>(i) / val, m, n);
+			index = static_cast<int>(p.x) + static_cast<int>(p.y) * width;
+			dev_fragmentBuffer[index].color = glm::vec3(1.f, 0.1f, 0.5f);
+		}
+	}
 }
 
 __global__
@@ -747,6 +782,9 @@ void _rasterizePrims(
 		glm::vec3 prim0 = glm::vec3(primitive.v[0].pos);
 		glm::vec3 prim1 = glm::vec3(primitive.v[1].pos);
 		glm::vec3 prim2 = glm::vec3(primitive.v[2].pos);
+		
+#if TRIANGLES
+		
 		int minX = glm::max(glm::floor(glm::min(prim0.x, glm::min(prim1.x, prim2.x))), 0.0f);
 		int maxX = glm::min(glm::ceil(glm::max(prim0.x, glm::max(prim1.x, prim2.x))), width - 1.0f);
 		int minY = glm::max(glm::floor(glm::min(prim0.y, glm::min(prim1.y, prim2.y))), 0.0f);
@@ -787,11 +825,46 @@ void _rasterizePrims(
 						dev_fragmentBuffer[index].texcoord0 = (perspectivebarycentricCoord.x * primitive.v[0].texcoord0 + perspectivebarycentricCoord.y *primitive.v[1].texcoord0 + perspectivebarycentricCoord.z * primitive.v[2].texcoord0) * depth;
 
 						/*dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;*/
-						
 					}
 				}
 			}
 		}
+
+#elif LINES
+		//unroll 3 vertices of tri
+
+		glm::vec3 vertices[3] = {
+			glm::vec3(dev_primitives[pid].v[0].pos),
+			glm::vec3(dev_primitives[pid].v[1].pos),
+			glm::vec3(dev_primitives[pid].v[2].pos)
+		};
+
+		//vertices[0], vertices[1]
+		_rasterizeLine(vertices[0], vertices[1], width, height, dev_fragmentBuffer);
+		//vertices[1], vertices[2]
+		_rasterizeLine(vertices[1], vertices[2], width, height, dev_fragmentBuffer);
+		//vertices[2], vertices[0]
+		_rasterizeLine(vertices[2], vertices[0], width, height, dev_fragmentBuffer);
+
+#elif POINTS
+		//unroll 3 vertices of tri
+
+		glm::vec3 vertices[3] = {
+			glm::vec3(dev_primitives[pid].v[0].pos),
+			glm::vec3(dev_primitives[pid].v[1].pos),
+			glm::vec3(dev_primitives[pid].v[2].pos)
+		};
+
+		for (int i = 0; i < 3; ++i) {
+			int x = vertices[i].x;
+			int y = vertices[i].y;
+			int index = x + y * width;
+
+			if (x > 0 && x < width && y > 0 && y < height) 
+				dev_fragmentBuffer[index].color = glm::vec3(0.1f, 1.f, 0.f);
+
+		}
+#endif
 	}
 }
 
