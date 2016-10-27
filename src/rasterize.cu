@@ -17,6 +17,7 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <chrono>
 
 namespace {
 
@@ -171,7 +172,7 @@ void rasterizeInit(int w, int h) {
 }
 
 __global__
-void initDepth(int w, int h, int * depth)
+void initDepth(int w, int h, int val, int * depth)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -179,7 +180,7 @@ void initDepth(int w, int h, int * depth)
 	if (x < w && y < h)
 	{
 		int index = x + (y * w);
-		depth[index] = INT_MAX;
+		depth[index] = val;
 	}
 }
 
@@ -735,6 +736,12 @@ void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *
  * Perform rasterization.
  */
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+	// timers
+	cudaEvent_t rast_start, rast_stop;
+
+	cudaEventCreate(&rast_start);
+	cudaEventCreate(&rast_stop);
+
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
@@ -780,15 +787,26 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	
 	// Initialize depth buffer to INT_MAX
-	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	initDepth << <blockCount2d, blockSize2d >> >(width, height, INT_MAX, dev_depth);
 	
 	// Rasterize
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 	
+	// Timer
+	
+	cudaEventRecord(rast_start);
+
 	_rasterize_scanlines << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height,
 		dev_primitives, dev_fragmentBuffer, dev_depth);
 
-    // Copy depthbuffer colors into framebuffer
+	//cudaEventRecord(rast_stop);
+	
+	//float milliseconds = 0;
+	//cudaEventElapsedTime(&milliseconds, rast_start, rast_stop);
+	
+	//std::cout << milliseconds << " milliseconds" << std::endl;
+	
+	// Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
