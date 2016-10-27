@@ -4,9 +4,11 @@ set(SOURCE_FILES
     "glslUtility.hpp"
     "glslUtility.cpp"
     "tiny_gltf_loader.h"
+    "timer.h"
+    "timer.cpp"
    )
 
 cuda_add_library(util
    ${SOURCE_FILES}
-   OPTIONS -arch=sm_52
+   OPTIONS -arch=sm_50
    )

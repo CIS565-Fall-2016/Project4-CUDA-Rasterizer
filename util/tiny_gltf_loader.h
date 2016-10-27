@@ -321,29 +321,40 @@ typedef struct {
   char pad[7];
 } Asset;
 
-class Scene {
- public:
-  Scene() {}
-  ~Scene() {}
+class Scene
+{
+public:
+	enum PrimitiveType{
+		Point = 1,
+		Line = 2,
+		Triangle = 3
+	};
 
-  std::map<std::string, Accessor> accessors;
-  std::map<std::string, Animation> animations;
-  std::map<std::string, Buffer> buffers;
-  std::map<std::string, BufferView> bufferViews;
-  std::map<std::string, Material> materials;
-  std::map<std::string, Mesh> meshes;
-  std::map<std::string, Node> nodes;
-  std::map<std::string, Texture> textures;
-  std::map<std::string, Image> images;
-  std::map<std::string, Shader> shaders;
-  std::map<std::string, Program> programs;
-  std::map<std::string, Technique> techniques;
-  std::map<std::string, Sampler> samplers;
-  std::map<std::string, std::vector<std::string> > scenes;  // list of nodes
+public:
 
-  std::string defaultScene;
+	Scene() : drawModelType(PrimitiveType::Triangle) {}
+	~Scene() {}
 
-  Asset asset;
+	std::map<std::string, Accessor> accessors;
+	std::map<std::string, Animation> animations;
+	std::map<std::string, Buffer> buffers;
+	std::map<std::string, BufferView> bufferViews;
+	std::map<std::string, Material> materials;
+	std::map<std::string, Mesh> meshes;
+	std::map<std::string, Node> nodes;
+	std::map<std::string, Texture> textures;
+	std::map<std::string, Image> images;
+	std::map<std::string, Shader> shaders;
+	std::map<std::string, Program> programs;
+	std::map<std::string, Technique> techniques;
+	std::map<std::string, Sampler> samplers;
+	std::map<std::string, std::vector<std::string> > scenes;  // list of nodes
+
+	std::string defaultScene;
+	
+	Asset asset;
+
+	PrimitiveType drawModelType;
 };
 
 enum SectionCheck

@@ -7,7 +7,7 @@
  */
 
 
-
+#include <util/timer.h>
 #include "main.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -17,6 +17,7 @@
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
+static tinygltf::Scene* pScene = NULL;
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -24,19 +25,20 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-	tinygltf::Scene scene;
 	tinygltf::TinyGLTFLoader loader;
 	std::string err;
 	std::string input_filename(argv[1]);
 	std::string ext = getFilePathExtension(input_filename);
 
+	pScene = new  tinygltf::Scene();
+
 	bool ret = false;
 	if (ext.compare("glb") == 0) {
 		// assume binary glTF.
-		ret = loader.LoadBinaryFromFile(&scene, &err, input_filename.c_str());
+		ret = loader.LoadBinaryFromFile(pScene, &err, input_filename.c_str());
 	} else {
 		// assume ascii glTF.
-		ret = loader.LoadASCIIFromFile(&scene, &err, input_filename.c_str());
+		ret = loader.LoadASCIIFromFile(pScene, &err, input_filename.c_str());
 	}
 
 	if (!err.empty()) {
@@ -54,11 +56,12 @@ int main(int argc, char **argv) {
     fpstracker = 0;
 
     // Launch CUDA/GL
-    if (init(scene)) {
+	if (init(*pScene)) {
         // GLFW main loop
         mainLoop();
     }
 
+	delete pScene;
     return 0;
 }
 
@@ -121,7 +124,7 @@ void runCuda() {
     cudaGLMapBufferObject((void **)&dptr, pbo);
 	rasterize(dptr, MVP, MV, MV_normal);
     cudaGLUnmapBufferObject(pbo);
-
+	
     frame++;
     fpstracker++;
 }
@@ -158,6 +161,7 @@ bool init(const tinygltf::Scene & scene) {
     initTextures();
     initCuda();
 	initPBO();
+	Timer::initializeTimer();
 
 	// Mouse Control Callbacks
 	glfwSetMouseButtonCallback(window, mouseButtonCallback);
@@ -179,8 +183,7 @@ bool init(const tinygltf::Scene & scene) {
 		}
 	}
 
-
-	rasterizeSetBuffers(scene);
+	setSceneBuffers(scene);
 
     GLuint passthroughProgram;
     passthroughProgram = initShader();
@@ -306,8 +309,12 @@ void deleteTexture(GLuint *tex) {
     *tex = (GLuint)NULL;
 }
 
-void shut_down(int return_code) {
+void shut_down(int return_code)
+{
+	clearSceneBuffers();
     rasterizeFree();
+	Timer::shutdownTimer();
+
     cudaDeviceReset();
 #ifdef __APPLE__
     glfwTerminate();
@@ -323,10 +330,44 @@ void errorCallback(int error, const char *description) {
     fputs(description, stderr);
 }
 
-void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) 
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+	{
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
+	else if (key == GLFW_KEY_W && action == GLFW_PRESS)
+	{
+		switch (pScene->drawModelType)
+		{
+		case tinygltf::Scene::Triangle:
+			pScene->drawModelType = tinygltf::Scene::Line;
+			break;
+		case tinygltf::Scene::Line:
+			pScene->drawModelType = tinygltf::Scene::Triangle;
+			break;
+		default:
+			break;
+		}
+		clearSceneBuffers();
+		setSceneBuffers(*pScene);
+	}
+	else if (key == GLFW_KEY_P && action == GLFW_PRESS)
+	{
+		switch (pScene->drawModelType)
+		{
+		case tinygltf::Scene::Triangle:
+			pScene->drawModelType = tinygltf::Scene::Point;
+			break;
+		case tinygltf::Scene::Point:
+			pScene->drawModelType = tinygltf::Scene::Triangle;
+			break;
+		default:
+			break;
+		}
+		clearSceneBuffers();
+		setSceneBuffers(*pScene);
+	}
 }
 
 //----------------------------
