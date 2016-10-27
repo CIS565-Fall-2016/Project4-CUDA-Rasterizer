@@ -23,14 +23,18 @@
 #define IDy ((blockIdx.y * blockDim.y) + threadIdx.y)
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
-#define getIndex(i, j, width) (i * width + j)
+#define getIndex(x, y, width) (x + y * width)
 
 
 #define DEBUG 1
 #define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
 #define debug0(...) if (DEBUG == 1 && id == 0) { printf (__VA_ARGS__); }
+#define debug1(...) if (DEBUG == 1 && id == 1) { printf (__VA_ARGS__); }
 #define debugDuck(...) if (DEBUG == 1 && id == 310031) { printf (__VA_ARGS__); }
+//#define debugBoard(...) if (DEBUG == 1 && id == ) { printf (__VA_ARGS__); }
 #define range(i, start, stop) for (i = start; i < stop; i++)
+#define SHOW_TEXTURE 0
+#define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
 
 namespace {
 
@@ -65,7 +69,7 @@ namespace {
     PrimitiveType primitiveType = Triangle; // C++ 11 init
     Vertex v[3];
     TextureData* diffuseTex = NULL;
-    int texWidth, texHeight;
+    glm::vec2 texRes;
     // ...
   };
 
@@ -105,8 +109,7 @@ namespace {
     Vertex* vertices;
 
     // TODO: add more attributes when needed
-    int texWidth;
-    int texHeight;
+    glm::vec2 texRes;
   };
 
 }
@@ -516,7 +519,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
           // You can only worry about this part once you started to 
           // implement textures for your rasterizer
           TextureData* dev_diffuseTex = NULL;
-          int texWidth, texHeight;
+          glm::vec2 texRes;
           if (!primitive.material.empty()) {
             const tinygltf::Material &mat = scene.materials.at(primitive.material);
             printf("material.name = %s\n", mat.name.c_str());
@@ -533,8 +536,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
                   
                   // TODO: store the image size to your PrimitiveDevBufPointers
-                  texWidth = image.width;
-                  texHeight = image.height;
+                  texRes = glm::vec2(image.width, image.height);
 
                   checkCUDAError("Set Texture Image data");
                 }
@@ -577,8 +579,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
             dev_diffuseTex,
 
             dev_vertex,  //VertexOut
-            texWidth,
-            texHeight
+            texRes
           });
 
           totalNumPrimitives += numPrimitives;
@@ -659,19 +660,18 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* prim
   if (IDx < numIndices) {
 
     // TODO: uncomment the following code for a start
-     //This is primitive assembly for triangles
+//This is primitive assembly for triangles
 
-    if (vertexParts.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		int n_vertices = vertexParts.primitiveType;
-		int prim_id = IDx / n_vertices + curPrimitiveBeginId;
-		Primitive &primitive = primitives[prim_id];
-		primitive.v[IDx % n_vertices]
-    		= vertexParts.vertices[vertexParts.indices[IDx]];
-		primitive.diffuseTex = vertexParts.diffuseTex;
-		primitive.texHeight = vertexParts.texHeight;
-		primitive.texWidth = vertexParts.texWidth;
-    }
-    // TODO: other primitive types (point, line)
+if (vertexParts.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+  int n_vertices = vertexParts.primitiveType;
+  int prim_id = IDx / n_vertices + curPrimitiveBeginId;
+  Primitive &primitive = primitives[prim_id];
+  primitive.v[IDx % n_vertices]
+    = vertexParts.vertices[vertexParts.indices[IDx]];
+  primitive.diffuseTex = vertexParts.diffuseTex;
+  primitive.texRes = vertexParts.texRes;
+}
+// TODO: other primitive types (point, line)
   }
 
 }
@@ -682,88 +682,151 @@ float getFragmentDepth(glm::vec3 bcCoord, glm::vec3 tri[3]) {
   int i;
   float depth = 0;
 
-// interpolate vertex depths
+  // interpolate vertex depths
   range(i, 0, 3) {
     depth += bcCoord[i] * tri[i].z;
   }
   return depth > MAX_DEPTH ? INT_MAX : depth * DEPTH_QUANTUM;
 }
 
+__device__
+glm::vec3 getColor(glm::vec2 texcoord, glm::vec2 texRes, TextureData *tex) {
+  //glm::vec2 coord = texWidth * texcoord
+  int tid = 3 * getIndex(texcoord.x, texcoord.y, texRes.x);
+  return glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]);
+}
+
 __global__
 void _rasterize(int n_primitives, int height, int width,
 const Primitive *primitives, int *depths, Fragment *fragments) {
   if (IDx >= n_primitives) return;
+  int id = IDx;
 
-  int i, j;
+  int i, y, x;
   Primitive primitive = primitives[IDx];
   glm::vec3 tri[3];
-  range(i, 0, 3) { 
+  range(i, 0, 3) {
     // get coordinates of tri points
     tri[i] = glm::vec3(primitive.v[i].pos);
   }
 
-  range(i, 0, height) { 
-    range(j, 0, width) {
-      int index = getIndex(i, j, width);
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
-        int depth = getFragmentDepth(barycentricCoord, tri);
+  AABB aabb = getAABBForTriangle(tri);
 
-        // assign fragEyePos.z to dev_depth[i] iff it is smaller 
-        // (fragment is closer to camera)
-        int index = getIndex(i, j, width);
-        atomicMin(depths + index, depth);
+
+  if (SHOW_TEXTURE) {
+    range(y, 0, height) {
+      range(x, 0, width) {
+        int index = getIndex(x, y, width); // up to (height - 1) * width + (width - 1) = height * width - 1
+
+        if (y < primitive.texRes.y && x < primitive.texRes.x) {
+          glm::vec2 texRes = primitive.texRes;
+          fragments[index].color = getColor(
+            glm::vec2(x, y),
+            texRes,
+            primitive.diffuseTex);
+          glm::vec2 t1 = texRes * glm::vec2(0.992090, 0.017195);
+          glm::vec3 c1 = getColor(t1, texRes, primitive.diffuseTex);
+          glm::vec2 t2 = texRes * glm::vec2(0.993819, 0.016058);
+          glm::vec3 c2 = getColor(t2, texRes, primitive.diffuseTex);
+          //debug0("color at (%.4f, %.4f) is (%.4f,%.4f,%.4f)\n",
+          //  t1.x,
+          //  t1.y,
+          //  c1.x,
+          //  c1.y,
+          //  c1.z);
+          //debug0("color at (%.4f, %.4f) is (%.4f,%.4f,%.4f)\n",
+          //  t2.x,
+          //  t2.y,
+          //  c2.x,
+          //  c2.y,
+          //  c2.z);
+          //debug0("tex width=%.4f tex height=%.4f",
+          //  texRes.x, texRes.y
+          //  );
+        }
       }
     }
   }
+  else {
+    range(y, aabb.min.y, aabb.max.y) {
+      range(x, aabb.min.x, aabb.max.x) {
+        int index = getIndex(x, y, width);
+        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
+        if (isBarycentricCoordInBounds(barycentricCoord)) {
+          int depth = getFragmentDepth(barycentricCoord, tri);
 
-  __syncthreads(); // wait for all depths to be updated
+          // assign fragEyePos.z to dev_depth[i] iff it is smaller 
+          // (fragment is closer to camera)
+          atomicMin(depths + index, depth);
+        }
+      }
+    }
 
-  range(i, 0, height - 100) {
-    range(j, 0, width - 100) { 
-      int index = getIndex(i, j, width); // up to (height - 1) * width + (width - 1) = height * width - 1
-      glm::vec2 viewPos = glm::vec2(i, j);
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+    __syncthreads(); // wait for all depths to be updated
 
 
-      // test textures
-      //if (i < primitive.texHeight && j < primitive.texWidth) {
-      //    Fragment &fragment = fragments[index];
-      //    int tid = 3 * getIndex(i, j, primitive.texWidth);
-      //    TextureData *tex = primitive.diffuseTex;
-      //    glm::vec3 texColor(tex[tid + 0], tex[tid + 1], tex[tid + 2]);
-      //    fragment.color = texColor;
-      //}
-      // end texture test
+    range(y, aabb.min.y, aabb.max.y) {
+      range(x, aabb.min.x, aabb.max.x) {
+        int index = getIndex(x, y, width); // up to (height - 1) * width + (width - 1) = height * width - 1
+        glm::vec2 viewPos = glm::vec2(x, y);
+        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
 
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
-        float depth = getFragmentDepth(barycentricCoord, tri);
-        if ((int)depth == depths[index]) {
-          Fragment &fragment = fragments[index];
-          Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
+        if (isBarycentricCoordInBounds(barycentricCoord)) {
+          float depth = getFragmentDepth(barycentricCoord, tri);
+          if ((int)depth == depths[index]) {
+            Fragment &fragment = fragments[index];
+            Vertex vertex = primitive.v[0]; // TODO: move common fields into Primitive
 
-          //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-          TextureData *tex = primitive.diffuseTex;
-          fragment.viewNor = glm::vec3(0);
-          fragment.color = glm::vec3(0);
-          int k;
-          range(k, 0, 3) {
-            float weight = barycentricCoord[k];
-            Vertex v = primitive.v[k]; // HELP: is this a call to global memory?
-            fragment.viewNor += weight * v.viewNor;
-            int id = index;
-            int x = v.texcoord0.x * primitive.texWidth;
-            int y = v.texcoord0.y * primitive.texHeight;
-            int tid = 3 * getIndex(y, x, primitive.texWidth);
+            //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+            fragment.viewPos = glm::vec3(viewPos, depth);
+            fragment.viewNor = glm::vec3(0);
+            glm::vec2 texcoord(0);
+
+            Vertex *v = primitive.v;
+            glm::vec3 depthFactor = glm::normalize(glm::vec3(
+              v[0].viewPos.z,
+              v[1].viewPos.z,
+              v[2].viewPos.z));
+
+            int k;
+            range(k, 0, 3) {
+              float weight = barycentricCoord[k];
+              Vertex v = primitive.v[k];
+              fragment.viewNor += weight * v.viewNor;
+              texcoord += (depthFactor[k] + weight) * v.texcoord0;
+            }
+            glm::vec2 texRes = primitive.texRes;
+            glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
+            int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
             TextureData *tex = primitive.diffuseTex;
-            glm::vec3 texColor(tex[tid + 0], tex[tid + 1], tex[tid + 2]);
-            fragment.color += weight * texColor;
+            fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
+
+            //float e = 0.005;
+            //glm::vec3 color(fragment.color);
+            //glm::vec2 texcoords[3] = {
+            //  v[0].texcoord0,
+            //  v[1].texcoord0,
+            //  v[2].texcoord0
+            //};
+            //if (texcoord.x < e && texcoord.y < e) {
+            //  debug1("bcCoord=%f,%f,%f\n", barycentricCoord.x, barycentricCoord.y, barycentricCoord.z);
+            //  debug1("texCoord[0]=%f,%f\n",
+            //    texcoords[0].x,
+            //    texcoords[0].y);
+            //    debug1("texCoord[1]=%f,%f\n",
+            //    texcoords[1].x,
+            //    texcoords[1].y);
+            //    debug1("texCoord[2]=%f,%f\n",
+            //    texcoords[2].x,
+            //    texcoords[2].y);
+            //    debug1("weighted texCoord=%f,%f\n", texcoord.x, texcoord.y);
+            //  debug1("rescaled coord=%f,%f\n", scaledCoord.x, scaledCoord.y);
+            //  debug1("color=%f,%f,%f\n\n",
+            //    color.x,
+            //    color.y,
+            //    color.z);
+            }
           }
-          fragment.color /= 255.0f;
-
-          //fragment.viewNor = primitive.v[0].viewNor;
-          fragment.viewPos = glm::vec3(viewPos, depth);
-
         }
       }
     }
@@ -783,28 +846,10 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   glm::vec3 V = glm::normalize(-frag.viewPos);
   glm::vec3 H = glm::normalize(L + V);
   float intensity = saturate(glm::dot(frag.viewNor, H) + 0.2);
-	framebuffer[index] = intensity * frag.color;
-
-  //int id = index;
-  //debugDuck("intensity=%.2f original-color=%.2f,%.2f,%.2f shaded-color=%.2f,%.2f,%.2f\n", 
-  //  intensity,
-  //  frag.color.x,
-  //  frag.color.y,
-  //  frag.color.z,
-  //  intensity * frag.color.x,
-  //  intensity * frag.color.y,
-  //  intensity * frag.color.z
-  //  );
-  //int id = index;
-  //debugDuck("preclamp=%f frag.viewNor=%f,%f,%f H=%f,%f,%f\n", 
-  //  preclamp,
-  //  frag.viewNor.x,
-  //  frag.viewNor.y,
-  //  frag.viewNor.z,
-  //  H.x,
-  //  H.y,
-  //  H.z);
-
+  if (SHOW_TEXTURE) {
+    intensity = 1;
+  }
+  framebuffer[index] = intensity * frag.color;
 }
 
 /**
@@ -843,8 +888,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
           *parts, 
           MVP, MV, MV_normal, 
           width, height);
-        checkCUDAError("Vertex Processing");
+        checkCUDAError("Vertex Transform and Assembly");
         cudaDeviceSynchronize();
+
         _primitiveAssembly << < numBlocksForIndices, numThreadsPerBlock >> >
           (parts->numIndices, 
           curPrimitiveBeginId, 

@@ -111,3 +111,8 @@ glm::vec3 interpolateVec3(const glm::vec3 tri[3], const glm::vec3 bcCoord) {
   }
   return val;
 }
+
+__host__ __device__ 
+bool approxEq(float a, float b) {
+	return a + EPSILON > b && a - EPSILON < b;
+}
