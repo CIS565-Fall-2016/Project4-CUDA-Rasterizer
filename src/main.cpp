@@ -13,6 +13,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
+#include <chrono>
 
 //-------------------------------
 //-------------MAIN--------------
@@ -65,18 +66,26 @@ int main(int argc, char **argv) {
 void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+		// tic
+		auto tic = std::chrono::high_resolution_clock::now();
         runCuda();
+		cudaDeviceSynchronize();
+		// toc
+		auto toc = std::chrono::high_resolution_clock::now();
+		std::chrono::milliseconds tictoc =
+				std::chrono::duration_cast<std::chrono::milliseconds>(toc - tic);
 
         time_t seconds2 = time (NULL);
 
         if (seconds2 - seconds >= 1) {
-
             fps = fpstracker / (seconds2 - seconds);
             fpstracker = 0;
             seconds = seconds2;
         }
 
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
+        string title = "CIS565 Rasterizer | "
+				+ utilityCore::convertIntToString((int)fps) + " FPS | ["
+				+ utilityCore::convertIntToString(tictoc.count()) + " ms]";
         glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
