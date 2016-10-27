@@ -46,14 +46,14 @@ Point Cloud | Wireframe | Solid
 
 ### Depth Test with Mutex
 Mutex OFF | Mutex ON
---- | ---
+:---:|:---:
 63 ms/frame | 74 ms/frame
 ![](img/mutex_off.gif) | ![](img/mutex_on.gif)
  _Note*_ We can see in the animated GIFs, noise appears in Mutex OFF mode, because of race condition. To avoid that, each pixel has its own mutex, which is essentially an unsigned integer. When a CUDA thread is trying to seize a pixel to write, it calls atomicCAS to try to change the value of mutex. If it succeeded, it can then safely write that pixel, or it would try again. It alse takes more time to process a frame with Mutex.
 
 ### Texcoord Correction
 Perspective Correction OFF | Perspective Correction ON
---- | ---
+:---:|:---:
  ![](img/texcoord0.gif) | ![](img/texcoord1.gif)
  _Note*_ Texcoord Correction is unconditionally necessary since texture mapping would look wrong without correction. This is due to the fact that texture coordinates are interpolated in screen space, ignoring the depth information (Texcoords with deeper depth would be denser).
 
@@ -68,7 +68,7 @@ Nearest Neighbor | Bilinear
 
 ![](img/chart1.png)
 
-_Note*_ From the stacked column chart we can see that point cloud mode has the lowest percentage of rasterization runtime, while solid mode has the highest percentage. This is because in solid mode, every pixel within the bounding box of each triangle is tested, which makes rasterization of triangles computatino consuming.
+_Note*_ From the stacked column chart we can see that point cloud mode has the lowest percentage of rasterization runtime, while solid mode has the highest percentage. This is because in solid mode, every pixel within the bounding box of each triangle is tested, which makes rasterization of triangles computation-consuming.
 
 * Different Models
 
