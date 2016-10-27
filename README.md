@@ -38,17 +38,18 @@ Lambert | Blinn-Phong
  ![](img/cover_lambert.gif) | ![](img/cover_blinnphong.gif)
 _Note*_ Lighting is calculated in Fragment Shader for each pixel. Lambert reflectance is proportional to the dot product of surface normal and light direction, while Blinn-Phong reflectance is proportional to the dot product of surface normal and halfway direction raised to the power of shininess.
 
-### Rasterization Mode
+### Resterization Mode
 Point Cloud | Wireframe | Solid
 --- | --- | ---
- ![](img/point.gif) | ![](img/line.gif) | ![](img/triangle.gif)
+![](img/point.gif) | ![](img/line.gif) | ![](img/triangle.gif)
  _Note*_ Point Cloud mode is implemented in a straight forward way, by shading the pixel where each pixel is located. Wireframe mode is most concerned with how to shade the pixels between two vertices. In this project, I implemented that by enforcing one pixel in each row if a segment is more vertical than 45 degree, or one pixel in each column if the segment is more horizontal than 45 degree.
 
 ### Depth Test with Mutex
 Mutex OFF | Mutex ON
 --- | ---
- ![](img/mutex_off.gif) | ![](img/mutex_on.gif)
- _Note*_ To avoid race condition, each pixel has its own mutex, which is essentially an unsigned integer. When a CUDA thread is trying to seize a pixel to write, it calls atomicCAS to try to change the value of mutex. If it succeeded, it can then safely write that pixel, or it would try again.
+63 ms/frame | 74 ms/frame
+![](img/mutex_off.gif) | ![](img/mutex_on.gif)
+ _Note*_ We can see in the animated GIFs, noise appears in Mutex OFF mode, because of race condition. To avoid that, each pixel has its own mutex, which is essentially an unsigned integer. When a CUDA thread is trying to seize a pixel to write, it calls atomicCAS to try to change the value of mutex. If it succeeded, it can then safely write that pixel, or it would try again. It alse takes more time to process a frame with Mutex.
 
 ### Texcoord Correction
 Perspective Correction OFF | Perspective Correction ON
@@ -63,7 +64,19 @@ Nearest Neighbor | Bilinear
  _Note*_ Bilinear filtering is useful because texcoords are normalized thus cannot be mapped to a texel exactly after being scaled by texture width and height, thus we grab the four texels around the scaled texcoord and bilinear interpolate the color.
 
 ### Performance Analysis
+* Resterization Mode
 
+![](img/chart1.png)
+
+_Note*_ From the stacked column chart we can see that point cloud mode has the lowest percentage of rasterization runtime, while solid mode has the highest percentage. This is because in solid mode, every pixel within the bounding box of each triangle is tested, which makes rasterization of triangles computatino consuming.
+
+* Different Models
+
+Cow | Duck | Truck
+--- | --- | ---
+![](img/cow.png) | ![](img/duck.png) | ![](img/truck.png)
+
+![](img/chart2.png)
 
 ### Credits
 
