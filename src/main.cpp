@@ -14,9 +14,23 @@
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
 
-//-------------------------------
-//-------------MAIN--------------
-//-------------------------------
+bool textureMapping = false, bilinearFiltering = false, backfaceCulling = false;
+void printState(bool printTextures = true, bool printFiltering = true, bool printBackface = true) {
+	if (printTextures && printFiltering && printBackface)
+		printf("----- Settings -----\n\n");
+
+	if (printTextures)
+		printf("Texture Mapping: %s\n", textureMapping ? "On" : "Off");
+
+	if (printFiltering)
+		printf("Bilinear Filtering: %s\n", bilinearFiltering ? "On" : "Off");
+
+	if (printBackface)
+		printf("Backface Culling: %s\n", backfaceCulling ? "On" : "Off");
+
+	printf("\n--------------------\n");
+	printf("\n");
+}
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -119,7 +133,7 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
-	rasterize(dptr, MVP, MV, MV_normal);
+	rasterize(dptr, MVP, MV, MV_normal, textureMapping, bilinearFiltering, backfaceCulling);
     cudaGLUnmapBufferObject(pbo);
 
     frame++;
@@ -187,6 +201,8 @@ bool init(const tinygltf::Scene & scene) {
 
     glUseProgram(passthroughProgram);
     glActiveTexture(GL_TEXTURE0);
+
+	printState();
 
     return true;
 }
@@ -327,6 +343,23 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
+	if (action == GLFW_PRESS) {
+		if (key == GLFW_KEY_T)
+		{
+			textureMapping = !textureMapping;
+			printState(true, false, false);
+		}
+		else if (key == GLFW_KEY_F)
+		{
+			bilinearFiltering = !bilinearFiltering;
+			printState(false, true, false);
+		}
+		else if (key == GLFW_KEY_B)
+		{
+			backfaceCulling = !backfaceCulling;
+			printState(false, false, true);
+		}
+	}
 }
 
 //----------------------------
@@ -358,7 +391,6 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 		{
 			mouseState = TRANSLATE;
 		}
-
 	}
 	else if (action == GLFW_RELEASE)
 	{

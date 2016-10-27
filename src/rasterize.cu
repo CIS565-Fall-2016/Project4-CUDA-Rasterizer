@@ -737,7 +737,8 @@ void _rasterizePrimitives(
 	int width, int height, 
 	int numPrimitives, 
 	Primitive* dev_primitives, 
-	Fragment *dev_fragmentBuffer, int* dev_depth) {
+	Fragment *dev_fragmentBuffer, int* dev_depth,
+	bool textureMapping, bool bilinearFiltering) {
 	// primitive id  
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -778,24 +779,23 @@ void _rasterizePrimitives(
 						dev_fragmentBuffer[index].eyeNor = interpolate(barycentricCoord, eyeNorTri);
 						dev_fragmentBuffer[index].color = interpolate(barycentricCoord, colTri);
 
-						////interpolate texture color
-						//if (primitive.v[0].dev_diffuseTex) {
-						//	glm::vec2 texCoord = interpolate2D(barycentricCoord, texTri) /
-						//		interpolateFloat(barycentricCoord, invDepthTri);
+						if (textureMapping) {
+							//interpolate texture color
+							if (primitive.v[0].dev_diffuseTex) {
+								glm::vec2 texCoord = interpolate2D(barycentricCoord, texTri) /
+									interpolateFloat(barycentricCoord, invDepthTri);
 
-						//	/*float dir = glm::cross(glm::normalize(primitive.v[1].eyePos - primitive.v[0].eyePos),
-						//		glm::normalize(primitive.v[2].eyePos - primitive.v[1].eyePos))[2];
-						//	dev_fragmentBuffer[index].color = glm::vec3(dir);*/
-
-						//	/*dev_fragmentBuffer[index].color = glm::cross(glm::normalize(primitive.v[1].eyePos - primitive.v[0].eyePos),
-						//		glm::normalize(primitive.v[2].eyePos - primitive.v[1].eyePos));*/
-
-						//	dev_fragmentBuffer[index].color = _getTexColor(texCoord, 
-						//		dev_diffuseTex, texWidth, texHeight);
-
-						//	/*dev_fragmentBuffer[index].color = _getBilinearFilteredTexColor(texCoord, 
-						//		dev_diffuseTex, texWidth, texHeight);*/
-						//}
+								if (bilinearFiltering) {
+									dev_fragmentBuffer[index].color = _getBilinearFilteredTexColor(texCoord,
+									dev_diffuseTex, texWidth, texHeight);
+								}
+								else {
+									dev_fragmentBuffer[index].color = _getTexColor(texCoord,
+										dev_diffuseTex, texWidth, texHeight);
+								}
+							}
+						}
+						
 
 					}
 				}
@@ -817,7 +817,9 @@ struct is_backface
 /**
  * Perform rasterization.
  */
-void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+void rasterize(uchar4 *pbo, 
+	const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal,
+	bool textureMapping, bool bilinearFiltering, bool backfaceCulling) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
@@ -858,7 +860,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
 	
-	int numRemainingPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + totalNumPrimitives, is_backface()) - dev_thrust_primitives;
+	int numRemainingPrimitives = totalNumPrimitives;
+	if (backfaceCulling) {
+		thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + totalNumPrimitives, is_backface()) - dev_thrust_primitives;
+	}
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
@@ -866,7 +871,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 	dim3 numBlocksForPrimitives((numRemainingPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 	_rasterizePrimitives << <numRemainingPrimitives, numThreadsPerBlock >> >
-		(width, height, numRemainingPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth);
+		(width, height, numRemainingPrimitives, dev_primitives, 
+		dev_fragmentBuffer, dev_depth, textureMapping, bilinearFiltering);
 	checkCUDAError("rasterize primitives");
 
     // Copy depthbuffer colors into framebuffer
