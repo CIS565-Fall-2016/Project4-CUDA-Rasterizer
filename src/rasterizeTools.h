@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file      rasterizeTools.h
  * @brief     Tools/utility functions for rasterization.
  * @authors   Yining Karl Li
