@@ -74,7 +74,7 @@ _Note*_ From the stacked column chart we can see that point cloud mode has the l
 
 Cow | Duck | Truck
 --- | --- | ---
-![](img/cow.png) | ![](img/duck.png) | ![](img/truck.png)
+![](img/cow.PNG) | ![](img/duck.PNG) | ![](img/truck.PNG)
 
 ![](img/chart2.png)
 
