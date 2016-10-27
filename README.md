@@ -10,27 +10,35 @@ CUDA Rasterizer
 
 ### GPU Rasterizer
 
+Renders:
+
 ![](renders/cesium_truck.gif)
 
-![](renders/no_bilinear.PNG)
+Textures: with Bilinear Interpolation
+-------------------------------------
+| Without Bilinear Filtering  | With Bilinear Filtering |
+| --------------------------  | ----------------------- |
+| ![](renders/no_bilinear.PNG)|![](renders/bilinear.PNG)|
 
-![](renders/bilinear.PNG)
+And Perspective correct texture coords
+--------------------------------------
 
-![](renders/persp_incorrect.gif)
+| Without Perspective correct Texture | With Perspective correct Texture |
+| ----------------------------------- | -------------------------------- |
+| ![](renders/persp_incorrect.gif)    | ![](renders/persp_correct.gif)   |
 
-![](renders/persp_correct.gif)
+Materials: Diffuse, Specular (Blinn-Phong), Toon Shading
+--------------------------------------------------------
 
-![](renders/diffuse.gif)
+| Diffuse | Specular | Toon Shading |
+| ------- | -------- | ------------ |
+| ![](renders/diffuse.gif) | ![](renders/specular.gif) | ![](renders/toon.gif) |
+Different Primitives: Triangles (default), Lines (wireframe), Points
+--------------------------------------------------------------------
 
-![](renders/specular.gif)
-
-![](renders/toon.gif)
-
-![](renders/triangles.gif)
-
-![](renders/lines.gif)
-
-![](renders/points.gif)
+| Triangles | Lines | Points |
+| --------- | ----- | ------ |
+| ![](renders/triangles.gif) | ![](renders/lines.gif) | ![](renders/points.gif) |
 
 ### (TODO: Your README)
 
