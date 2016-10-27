@@ -17,6 +17,7 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 
 namespace {
 
@@ -50,6 +51,12 @@ namespace {
 		// ...
 	};
 
+	struct Light {
+		float emittance;
+		glm::vec4 pos;
+		glm::vec3 eyePos;
+	};
+
 	struct Primitive {
 		PrimitiveType primitiveType = Triangle;	// C++ 11 init
 		VertexOut v[3];
@@ -62,8 +69,8 @@ namespace {
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
 
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
+		glm::vec3 eyePos;	// eye space position used for shading
+		glm::vec3 eyeNor;
 		// VertexAttributeTexcoord texcoord0;
 		// TextureData* dev_diffuseTex;
 		// ...
@@ -107,9 +114,10 @@ static int height = 0;
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
+static unsigned int*dev_mutex = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
-static int * dev_depth = NULL;	// you might need this buffer when doing depth test
+static float * dev_depth = NULL;	// you might need this buffer when doing depth test
 
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
@@ -137,16 +145,18 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 * Writes fragment colors to the framebuffer
 */
 __global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer, Light* light) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
 
     if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
-
 		// TODO: add your fragment shader code here
-
+		//Fragment *frag = &fragmentBuffer[index];
+		//printf("light %f \n", glm::dot(frag->eyeNor, glm::normalize(light->eyePos - frag->eyePos)));
+		//framebuffer[index] = fragmentBuffer[index].color;
+		framebuffer[index] = light->emittance * fragmentBuffer[index].color
+			* glm::dot(fragmentBuffer[index].eyeNor, glm::normalize(light->eyePos - fragmentBuffer[index].eyePos));
     }
 }
 
@@ -164,13 +174,17 @@ void rasterizeInit(int w, int h) {
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
 	cudaFree(dev_depth);
-	cudaMalloc(&dev_depth, width * height * sizeof(int));
+	cudaMalloc(&dev_depth, width * height * sizeof(float));
+
+	cudaFree(dev_mutex);
+	cudaMalloc(&dev_mutex, width*height*sizeof(unsigned int));
+	cudaMemset(dev_mutex, 0, width*height*sizeof(unsigned int));
 
 	checkCUDAError("rasterizeInit");
 }
 
 __global__
-void initDepth(int w, int h, int * depth)
+void initDepth(int w, int h, float * depth)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -178,7 +192,7 @@ void initDepth(int w, int h, int * depth)
 	if (x < w && y < h)
 	{
 		int index = x + (y * w);
-		depth[index] = INT_MAX;
+		depth[index] = FLT_MAX;
 	}
 }
 
@@ -623,6 +637,13 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 
 
+__device__
+float transFloat(float x, int len)
+{
+	float new_x = (x + 1.0f) * 0.5f * (float)len;
+	return new_x;
+}
+
 __global__ 
 void _vertexTransformAndAssembly(
 	int numVertices, 
@@ -638,24 +659,20 @@ void _vertexTransformAndAssembly(
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
 		// Then divide the pos by its w element to transform into NDC space
 		// Finally transform x and y to viewport space
-		//VertexOut out;
-		//glm::vec4 clip = MVP * glm::vec4(primitive.dev_position[primitive.dev_indices[vid]], 1.0f);
-		//glm::vec3 ndc = glm::vec3(clip.x / clip.w, clip.y / clip.w, clip.z / clip.w);
-
-		//float near = 1.0f;
-		//float far = 1000.0f;
-
-		//out.pos = glm::vec4(width/2*(ndc.x+1), height/2*(ndc.y+1), (far-near)/2*ndc.z + (far+near)/2, 1.0f);
-		//out.eyeNor = primitive.dev_normal[primitive.dev_indices[vid]];
-
-		//primitive.dev_verticesOut[vid] = out;
 
 
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
+		auto *vout = &primitive.dev_verticesOut[vid];
 
-		primitive.dev_verticesOut[vid].pos = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
-		
+		vout->pos = MVP * glm::vec4(primitive.dev_position[vid], 1.0f);
+		vout->pos /= vout->pos.w;
+		vout->pos.x = transFloat(vout->pos.x, width);
+		vout->pos.y = transFloat(vout->pos.y, height);
+
+		glm::vec4 eyePos = MV * glm::vec4(primitive.dev_position[vid], 1.0f);
+		vout->eyePos = glm::vec3(eyePos / eyePos.w);
+		vout->eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 	}
 }
 
@@ -687,7 +704,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
-__global__ void _rasterization(int numIndices, Primitive *dev_primitive, int width, int height, Fragment *frag)
+__global__ void _rasterization(int numIndices, Primitive *dev_primitive, int width, int height, Fragment *frag, unsigned int *fragMutex, float *fragDepth)
 {
 	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
 
@@ -697,17 +714,13 @@ __global__ void _rasterization(int numIndices, Primitive *dev_primitive, int wid
 			return glm::vec2(p.x / p.w, p.y / p.w);
 		};
 
-		auto vec4ToVec3 = [vec4ToVec2](glm::vec4 p) -> glm::vec3 {
-			return glm::vec3(vec4ToVec2(p), 0.0f);
-		};
-
 		VertexOut *triangle = dev_primitive[iid].v;
-		glm::vec3 trianglePts[] = { vec4ToVec3(triangle[0].pos), vec4ToVec3(triangle[1].pos), vec4ToVec3(triangle[2].pos) };
+		glm::vec3 trianglePts[] = { glm::vec3(triangle[0].pos), glm::vec3(triangle[1].pos), glm::vec3(triangle[2].pos) };
 		auto aabbPts = getAABBForTriangle(trianglePts);
 
 		auto trans = [](float x, int len) -> int
 		{
-			int new_x = (x + 1.0f) * 0.5f * len;
+			int new_x = x;
 			if (new_x >= len) new_x = len - 1;
 			if (new_x < 0) new_x = 0;
 			return new_x;
@@ -723,65 +736,40 @@ __global__ void _rasterization(int numIndices, Primitive *dev_primitive, int wid
 			for (int x = x_min; x <= x_max; ++x)
 			{
 				int idx = x + (height - y - 1) * width;
-				float xx = 2 * ((float)x / width) - 1;
-				float yy = 2 * ((float)y / height) - 1;
 
-				auto isInTriangle = [vec4ToVec2](float xx, float yy, glm::vec4 p1, glm::vec4 p2, glm::vec4 p3) -> bool {
-					auto p1_2d = vec4ToVec2(p1);
-					auto p2_2d = vec4ToVec2(p2);
-					auto p3_2d = vec4ToVec2(p3);
-
-					auto ccw = [](glm::vec2 p1, glm::vec2 p2, glm::vec2 p3) -> float {
-						return p1.x * p2.y + p2.x * p3.y + p3.x * p1.y - p1.y * p2.x - p2.y * p3.x - p3.y * p1.x;
-					};
-
-
-					auto p = glm::vec2(xx, yy);
-					return ccw(p1_2d, p2_2d, p) > 0 && ccw(p2_2d, p3_2d, p) > 0 && ccw(p3_2d, p1_2d, p) > 0;
+				glm::vec3 trianglePos[3] = {
+					glm::vec3{ triangle[0].pos },
+					glm::vec3{ triangle[1].pos },
+					glm::vec3{ triangle[2].pos }
 				};
+				glm::vec3 barycentricCoord = calculateBarycentricCoordinate(trianglePos, glm::vec2(x, y));
 
-				if (isInTriangle(xx, yy, triangle[0].pos, triangle[1].pos, triangle[2].pos))
+				if (isBarycentricCoordInBounds(barycentricCoord))
 				{
-					frag[idx].color = glm::vec3(1.0f, 0, 0);
+					bool isSet;
+					do
+					{
+						isSet = (atomicCAS(&fragMutex[idx], 0, 1) == 0);
+						if (isSet)
+						{
+							float depth = glm::dot(barycentricCoord, glm::vec3(triangle[0].pos.z, triangle[1].pos.z, triangle[2].pos.z));
+							if (depth < fragDepth[idx])
+							{
+								// update frag
+								frag[idx].color = glm::vec3(1.0f, 0, 0);
+								frag[idx].eyePos = glm::mat3(triangle[0].eyePos, triangle[1].eyePos, triangle[2].eyePos) * barycentricCoord;
+								frag[idx].eyeNor = glm::mat3(triangle[0].eyeNor, triangle[1].eyeNor, triangle[2].eyeNor) * barycentricCoord;
+								fragDepth[idx] = depth;
+							}
+						}
+						if (isSet)
+						{
+							fragMutex[idx] = 0;
+						}
+					} while (!isSet);
 				}
 			}
 		}
-
-
-		// Naive loop over all pixels.
-		//for (int y = 0; y < height; ++y)
-		//{
-		//	for (int x = 0; x < width; ++x)
-		//	{
-		//		int idx = x + y * width;
-		//		float xx = 2 * ((float)x / width) - 1;
-		//		float yy = 2 * ((float)(width - y) / width) - 1;
-
-		//		auto isInTriangle = [](float xx, float yy, glm::vec4 p1, glm::vec4 p2, glm::vec4 p3) -> bool {
-		//			auto vec4ToVec2 = [](glm::vec4 p) -> glm::vec2 {
-		//				return glm::vec2(p.x / p.w, p.y / p.w);
-		//			};
-
-		//			auto p1_2d = vec4ToVec2(p1);
-		//			auto p2_2d = vec4ToVec2(p2);
-		//			auto p3_2d = vec4ToVec2(p3);
-
-		//			auto ccw = [](glm::vec2 p1, glm::vec2 p2, glm::vec2 p3) -> float {
-		//				return p1.x * p2.y + p2.x * p3.y + p3.x * p1.y - p1.y * p2.x - p2.y * p3.x - p3.y * p1.x;
-		//			};
-
-
-		//			auto p = glm::vec2(xx, yy);
-		//			return ccw(p1_2d, p2_2d, p) > 0 && ccw(p2_2d, p3_2d, p) > 0 && ccw(p3_2d, p1_2d, p) > 0;
-		//		};
-
-		//		VertexOut *triangle = dev_primitive[iid].v;
-		//		if (isInTriangle(xx, yy, triangle[0].pos, triangle[1].pos, triangle[2].pos))
-		//		{
-		//			frag[idx].color = glm::vec3(1.0f, 0, 0);
-		//		}
-		//	}
-		//}
 	}
 }
 
@@ -832,18 +820,36 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
-	
+	checkCUDAError("init depth");
+
 	// TODO: rasterize
 	//Primitive *primitives = new Primitive[totalNumPrimitives];
 	//cudaMemcpy(primitives, dev_primitives, sizeof(Primitive) * totalNumPrimitives, cudaMemcpyDeviceToHost);
 	dim3 numThreadsPerBlock(128);
 	dim3 numBlocks((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-	_rasterization << <numBlocks, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer);
-	
+	cudaMemset(dev_mutex, 0, width*height*sizeof(unsigned int));
+
+	_rasterization << <numBlocks, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, width, height, 
+		dev_fragmentBuffer, dev_mutex, dev_depth);
+	checkCUDAError("rasterization");
+	//printf("Finish one round of rasterization\n");
+
+	// create temp light
+	Light light;
+	light.emittance = 2.0f;
+	light.pos = glm::vec4(5.0f, 10.0f, 7.0f, 1.0f);
+	glm::vec4 lightEyePos = MV * light.pos;
+	light.eyePos = glm::vec3(lightEyePos / lightEyePos.w);
+	Light *cudaLight;
+	cudaMalloc(&cudaLight, sizeof(Light));
+	cudaMemcpy(cudaLight, &light, sizeof(Light), cudaMemcpyHostToDevice);
+	//printf("Finish one round of light\n");
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, cudaLight);
 	checkCUDAError("fragment shader");
+	//printf("Finish one round of render\n");
+
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
@@ -886,6 +892,9 @@ void rasterizeFree() {
 
 	cudaFree(dev_depth);
 	dev_depth = NULL;
+
+	cudaFree(dev_mutex);
+	dev_mutex = NULL;
 
     checkCUDAError("rasterize Free");
 }
