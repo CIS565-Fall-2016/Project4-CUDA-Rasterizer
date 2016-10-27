@@ -35,12 +35,14 @@ The above diagram shows the correctness of our perspective correct texture coord
 
 ### Performance Analysis
 ![](renders/PipeStagePerfs.JPG)
+
 From the graph above, we notice that:
-1. The rasterization stage is the most costly since it must determine whether a pixel is part of a primitive or not.
-2. The Intialization of the Frame buffers, their final transfer to OpenGL and the Sobel Mapping used for toon-shading always take the same amount of time since they compute the exact same operation on exactly the same sized-data (every pixel).
-3. The vertex shader is the least costly operation. This is because it is not only an embarassingly parallel problem but it also mostly involve FPU computations which the GPU is very good at.
+  1. The rasterization stage is the most costly since it must determine whether a pixel is part of a primitive or not.
+  2. The Intialization of the Frame buffers, their final transfer to OpenGL and the Sobel Mapping used for toon-shading always take the same amount of time since they compute the exact same operation on exactly the same sized-data (every pixel).
+  3. The vertex shader is the least costly operation. This is because it is not only an embarassingly parallel problem but it also mostly involve FPU computations which the GPU is very good at.
 
 ![](renders/BackFacePerf.JPG)
+
 As seen in the table above, backface culling isn't improving much the overall performance of the rasterizer. This is because there are a lot of data that needs to be sorted and removed from the primitives array (depending on whether a primitive is back-face culling). I would expect the operation to be much faster in OpenGL where it may be processed directly by the hardware itself.
 
 ### Postview
