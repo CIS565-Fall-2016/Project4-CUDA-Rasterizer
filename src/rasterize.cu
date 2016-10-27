@@ -780,62 +780,54 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
             fragment.viewPos = glm::vec3(viewPos, depth);
             fragment.viewNor = glm::vec3(0);
             glm::vec2 texcoord(0);
-
-            Vertex *v = primitive.v;
-            glm::vec3 depthFactor = glm::vec3(
-              v[0].viewPos.z,
-              v[1].viewPos.z,
-              v[2].viewPos.z
-              );
-            depthFactor /= 
-              depthFactor.x +
-              depthFactor.y +
-              depthFactor.z;
-
-            depthFactor = glm::vec3(0.5, 0.25, 0.25); //TODO: get rid of this;
+            float texWeightNorm = 0;
 
             int k;
             range(k, 0, 3) {
               float weight = barycentricCoord[k];
               Vertex v = primitive.v[k];
               fragment.viewNor += weight * v.viewNor;
-              texcoord += ((depthFactor[k] + weight) / 2.0f) * v.texcoord0;
+              float texWeight = weight / v.viewPos.z;
+              texcoord += texWeight * v.texcoord0;
+              texWeightNorm += texWeight;
             }
+
+            texcoord /= texWeightNorm;
             glm::vec2 texRes = primitive.texRes;
             glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
             int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
             TextureData *tex = primitive.diffuseTex;
             fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
 
-            float e = 0.005;
-            glm::vec3 color(fragment.color);
-            glm::vec2 texcoords[3] = {
-              v[0].texcoord0,
-              v[1].texcoord0,
-              v[2].texcoord0
-            };
-            if (barycentricCoord.x < e && barycentricCoord.y < e) {
-              debug1("bcCoord=%f,%f,%f\n", barycentricCoord.x, barycentricCoord.y, barycentricCoord.z);
-              debug1("texCoord[0]=%f,%f\n",
-                texcoords[0].x,
-                texcoords[0].y);
-                debug1("texCoord[1]=%f,%f\n",
-                texcoords[1].x,
-                texcoords[1].y);
-                debug1("texCoord[2]=%f,%f\n",
-                texcoords[2].x,
-                texcoords[2].y);
-                debug1("weighted texCoord=%f,%f\n", texcoord.x, texcoord.y);
-              debug1("rescaled coord=%f,%f\n", scaledCoord.x, scaledCoord.y);
-              debug1("color=%f,%f,%f\n\n",
-                color.x,
-                color.y,
-                color.z);
-              debug1("depthFactor=%f,%f,%f\n\n",
-                depthFactor.x,
-                depthFactor.y,
-                depthFactor.z);
-            }
+            //float e = 0.005;
+            //glm::vec3 color(fragment.color);
+            //glm::vec2 texcoords[3] = {
+            //  v[0].texcoord0,
+            //  v[1].texcoord0,
+            //  v[2].texcoord0
+            //};
+            //if (barycentricCoord.x < e && barycentricCoord.y < e) {
+            //  debug1("bcCoord=%f,%f,%f\n", barycentricCoord.x, barycentricCoord.y, barycentricCoord.z);
+            //  debug1("texCoord[0]=%f,%f\n",
+            //    texcoords[0].x,
+            //    texcoords[0].y);
+            //    debug1("texCoord[1]=%f,%f\n",
+            //    texcoords[1].x,
+            //    texcoords[1].y);
+            //    debug1("texCoord[2]=%f,%f\n",
+            //    texcoords[2].x,
+            //    texcoords[2].y);
+            //    debug1("weighted texCoord=%f,%f\n", texcoord.x, texcoord.y);
+            //  debug1("rescaled coord=%f,%f\n", scaledCoord.x, scaledCoord.y);
+            //  debug1("color=%f,%f,%f\n\n",
+            //    color.x,
+            //    color.y,
+            //    color.z);
+            //  debug1("triDepths=%f,%f,%f\n\n",
+            //    triDepths.x,
+            //    triDepths.y,
+            //    triDepths.z);
+            //}
           }
         }
       }
