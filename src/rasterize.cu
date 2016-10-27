@@ -64,11 +64,17 @@ namespace {
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
 
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
+		glm::vec3 eyePos;	// eye space position used for shading
+		glm::vec3 eyeNor;
 		// VertexAttributeTexcoord texcoord0;
 		// TextureData* dev_diffuseTex;
 		// ...
+	};
+
+	struct Light {
+		glm::vec3 position;
+
+		float intensity;
 	};
 
 	struct PrimitiveDevBufPointers {
@@ -139,16 +145,34 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 * Writes fragment colors to the framebuffer
 */
 __global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
 
     if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
+		glm::vec3 eyePos = fragmentBuffer[index].eyePos;
+		glm::vec3 eyeNor = fragmentBuffer[index].eyeNor;
 
-		// TODO: add your fragment shader code here
+		// Simple diffuse lighting
+		glm::vec3 light_dir = glm::normalize(eyePos - l.position);
 
+		// Blinn-phong shading model used from https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+        float diffuse = glm::max(0.0f, l.intensity * glm::dot(light_dir, eyeNor));		
+
+		float specular = 0.0;
+
+		if (diffuse > 0.0) {
+
+			glm::vec3 view_dir = glm::normalize(-eyePos);
+
+			glm::vec3 half_dir = glm::normalize(light_dir + view_dir);
+			float specAngle = glm::max(glm::dot(half_dir, eyeNor), 0.0f);
+			specular = pow(specAngle, 16.0f);
+
+		}
+
+		framebuffer[index] = fragmentBuffer[index].color * diffuse + specular;
     }
 }
 
@@ -641,17 +665,21 @@ void _vertexTransformAndAssembly(
 		// Finally transform x and y to viewport space
 
 		glm::vec4 pos = glm::vec4(primitive.dev_position[vid], 1.0);
+		glm::vec4 eyePos = MV * pos;
+
 		pos = MVP * pos;
+
 		float inv_w = 1.0f / pos.w;
 
 		pos.x *= inv_w;
 		pos.y *= inv_w;
 		pos.z *= inv_w;
 
-		// TODO: Apply vertex assembly here
 		// Assemble all attribute arrays into the primitive array
 
 		primitive.dev_verticesOut[vid].pos = pos;
+		primitive.dev_verticesOut[vid].eyePos = glm::vec3(eyePos); 
+		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 	}
 }
 
@@ -724,8 +752,12 @@ void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *
 
 					if (atomicMin(&depth_buffer[index], idepth) > idepth) {
 						
-						fragmentbuffer[index].color = glm::vec3((float)pid / t, 0.0f, 0.0f);
-					
+						fragmentbuffer[index].color = glm::vec3(.2f, 0.3f, 0.0f);
+						fragmentbuffer[index].eyePos = bary.x * p.v[0].eyePos +
+							bary.y * p.v[1].eyePos + bary.z * p.v[2].eyePos;
+						fragmentbuffer[index].eyeNor = bary.x * p.v[0].eyeNor + 
+							bary.y * p.v[1].eyeNor + bary.z * p.v[2].eyeNor;
+
 					}
 				}	
 			}
@@ -807,7 +839,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	//std::cout << milliseconds << " milliseconds" << std::endl;
 	
 	// Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+	Light l;
+	l.position = glm::vec3(1.0, 3.0, -10.0);
+	l.intensity = 2.0;
+	render << <blockCount2d, blockSize2d >> >(width, height, l, dev_fragmentBuffer, dev_framebuffer);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);

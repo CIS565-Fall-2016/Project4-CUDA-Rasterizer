@@ -16,6 +16,10 @@ With bb
 0 ms per frame
 Measured using chrono and then cuda events
 
+
+#### Shading
+Blinn-phong used from https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
