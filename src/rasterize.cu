@@ -19,10 +19,15 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "util/utilityCore.hpp"
 
-#define TRIANGLES 0
+#define TRIANGLES 1
 #define LINES 0
-#define POINTS 1
+#define POINTS 0
 
+#define DIFFUSE 0
+#define SPECULAR 0
+#define TOON 1
+
+#define BILINEAR 1
 
 namespace {
 
@@ -157,11 +162,15 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int height = fragmentBuffer[index].diffuseTexHeight;
 
     if (x < w && y < h) {
-        //framebuffer[index] = fragmentBuffer[index].color;
-		glm::vec3 light = glm::normalize(glm::vec3(10, 10, 10));
+		glm::vec3 light = glm::normalize(glm::vec3(1, 1, 1));
+		glm::vec3 ambientColor = glm::vec3(0.1, 0.0, 0.0);
+		glm::vec3 diffuseColor = glm::vec3(0.5, 0.0, 0.0);
+		glm::vec3 specColor = glm::vec3(1.0, 1.0, 1.0);
+		float shininess = 16.0;
+		float screenGamma = 2.2; // Assume the monitor is calibrated to the sRGB color space
 		float costheta = glm::max(glm::dot(glm::normalize(fragmentBuffer[index].eyeNor), light), 0.0f);
 		glm::vec3 diffuse;
-		//framebuffer[index] = diffuse;
+
 		if (fragmentBuffer[index].dev_diffuseTex != NULL){
 			
 			float u = fragmentBuffer[index].texcoord0.x * width;
@@ -176,25 +185,67 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
 			int u1 = static_cast<int>(u);
 			int v1 = static_cast<int>(v);
+			TextureData* texture = fragmentBuffer[index].dev_diffuseTex;
 
+#if BILINEAR
 			int c00 = 3 * (u1 + v1 * width);
 			int c10 = 3 * (u1 + 1 + v1 * width);
 			int c01 = 3 * (u1 + (v1 + 1) * width);
 			int c11 = 3 * (u1 + 1 + (v1 + 1) * width);
 
-			TextureData* texture = fragmentBuffer[index].dev_diffuseTex;
-
 			glm::vec3 t00(texture[c00] / 255.f, texture[c00 + 1] / 255.f, texture[c00 + 2] / 255.f);
 			glm::vec3 t01(texture[c01] / 255.f, texture[c01 + 1] / 255.f, texture[c01 + 2] / 255.f);
 			glm::vec3 t10(texture[c10] / 255.f, texture[c10 + 1] / 255.f, texture[c10 + 2] / 255.f);
 			glm::vec3 t11(texture[c11] / 255.f, texture[c11 + 1] / 255.f, texture[c11 + 2] / 255.f);
+			diffuseColor = ((1.f - vMin) * ((1.f - uMin) * t00 + uMin * t10) + vMin * ((1.f - uMin) * t01 + uMin * t11));
 
-			framebuffer[index] = ((1.f - vMin) * ((1.f - uMin) * t00 + uMin * t10) + vMin * ((1.f - uMin) * t01 + uMin * t11)) * costheta;
-			/*int uv_index = 3 * (u1 + v1 * width);
-			framebuffer[index] = glm::vec3(fragmentBuffer[index].dev_diffuseTex[uv_index] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 1] / 255.f, fragmentBuffer[index].dev_diffuseTex[uv_index + 2] / 255.f);*/
+#else
+			int uv_index = 3 * (u1 + v1 * width);
+			diffuseColor = glm::vec3(texture[uv_index] / 255.f, texture[uv_index + 1] / 255.f, texture[uv_index + 2] / 255.f);
+#endif
+
+			glm::vec3 colorLinear = diffuseColor;
+
+#if SPECULAR
+			/*Blinn-Phong Specular
+				https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+			*/
+			float specular = 0.0;
+			glm::vec3 viewDir = normalize(-fragmentBuffer[index].eyePos);
+			// this is blinn phong
+			glm::vec3 halfDir = normalize(light + viewDir);
+			float specAngle = glm::max(dot(halfDir, fragmentBuffer[index].eyeNor), 0.0f);
+			specular = pow(specAngle, shininess);
+			colorLinear = ambientColor +
+				costheta * diffuseColor +
+				specular * specColor;
+
+#elif TOON
+			/*Toon Shading:
+				http://rbwhitaker.wikidot.com/toon-shader
+			*/
+			// apply gamma correction (assume ambientColor, diffuseColor and specColor
+			// have been linearized, i.e. have no gamma correction in them)
+			glm::vec3 colorGammaCorrected = pow(colorLinear, glm::vec3(1.f / screenGamma));
+			colorLinear = diffuseColor * costheta;
+			// Discretize the intensity, based on a few cutoff points
+			if (costheta > 0.75)
+				colorLinear = glm::vec3(1.0, 1, 1) * colorLinear;
+			else if (costheta > 0.5)
+				colorLinear = glm::vec3(0.7, 0.7, 0.7) * colorLinear;
+			else if (costheta > 0.05)
+				colorLinear = glm::vec3(0.35, 0.35, 0.35) * colorLinear;
+			else
+				colorLinear = glm::vec3(0.1, 0.1, 0.1) * colorLinear;
+
+#elif DIFFUSE
+			colorLinear *= costheta;
+#endif
+			framebuffer[index] = colorLinear;
+
 		}
 		else{
-			framebuffer[index] = fragmentBuffer[index].color/* * costheta*/;
+			framebuffer[index] = fragmentBuffer[index].color * costheta;
 		}
 
     }
@@ -810,6 +861,7 @@ void _rasterizePrims(
 						dev_fragmentBuffer[index].diffuseTexWidth = primitive.v[0].texWidth;
 						//interpolate
 						dev_fragmentBuffer[index].eyePos = barycentricCoord.x * primitive.v[0].eyePos + barycentricCoord.y *primitive.v[1].eyePos + barycentricCoord.z * primitive.v[2].eyePos;
+						/*dev_fragmentBuffer[index].eyePos += dev_fragmentBuffer[index].eyeNor * 0.3f;*/
 						dev_fragmentBuffer[index].eyeNor = barycentricCoord.x * primitive.v[0].eyeNor + barycentricCoord.y *primitive.v[1].eyeNor + barycentricCoord.z * primitive.v[2].eyeNor;
 						
 						/*Perspective correct depth interpolation: 
