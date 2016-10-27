@@ -3,10 +3,34 @@ CUDA Rasterizer
 
 [CLICK ME FOR INSTRUCTION OF THIS PROJECT](./INSTRUCTION.md)
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Akshay Shah
+* Tested on: Windows 10, i7-5700HQ @ 2.70GHz 16GB, GTX 970M 6GB (Personal Computer)
+
+### GPU Rasterizer
+
+![](renders/cesium_truck.gif)
+
+![](renders/no_bilinear.PNG)
+
+![](renders/bilinear.PNG)
+
+![](renders/persp_incorrect.gif)
+
+![](renders/persp_correct.gif)
+
+![](renders/diffuse.gif)
+
+![](renders/specular.gif)
+
+![](renders/toon.gif)
+
+![](renders/triangles.gif)
+
+![](renders/lines.gif)
+
+![](renders/points.gif)
 
 ### (TODO: Your README)
 

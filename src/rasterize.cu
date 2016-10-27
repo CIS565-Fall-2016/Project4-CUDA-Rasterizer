@@ -23,11 +23,12 @@
 #define LINES 0
 #define POINTS 0
 
-#define DIFFUSE 0
+#define DIFFUSE 1
 #define SPECULAR 0
-#define TOON 1
+#define TOON 0
 
 #define BILINEAR 1
+#define PERSPECTIVE_CORRECT 1
 
 namespace {
 
@@ -245,7 +246,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
 		}
 		else{
-			framebuffer[index] = fragmentBuffer[index].color * costheta;
+			framebuffer[index] = fragmentBuffer[index].color;
 		}
 
     }
@@ -874,9 +875,11 @@ void _rasterizePrims(
 						// multiply the result of this interpolation by z, the depth
 						// of the point on the 3D triangle that the pixel overlaps.
 						float depth = (1.0f / (perspectivebarycentricCoord.x + perspectivebarycentricCoord.y + perspectivebarycentricCoord.z));
+#if PERSPECTIVE_CORRECT
 						dev_fragmentBuffer[index].texcoord0 = (perspectivebarycentricCoord.x * primitive.v[0].texcoord0 + perspectivebarycentricCoord.y *primitive.v[1].texcoord0 + perspectivebarycentricCoord.z * primitive.v[2].texcoord0) * depth;
-
-						/*dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;*/
+#else
+						dev_fragmentBuffer[index].texcoord0 = barycentricCoord.x * primitive.v[0].texcoord0 + barycentricCoord.y * primitive.v[1].texcoord0 + barycentricCoord.z * primitive.v[2].texcoord0;
+#endif
 					}
 				}
 			}
