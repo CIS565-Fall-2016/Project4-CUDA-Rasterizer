@@ -793,7 +793,7 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
               float weight = barycentricCoord[k];
               Vertex v = primitive.v[k];
               fragment.viewNor += weight * v.viewNor;
-              texcoord += (depthFactor[k] + weight) * v.texcoord0;
+              texcoord += weight * v.texcoord0;
             }
             glm::vec2 texRes = primitive.texRes;
             glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
@@ -825,7 +825,7 @@ const Primitive *primitives, int *depths, Fragment *fragments) {
             //    color.x,
             //    color.y,
             //    color.z);
-            }
+            //}
           }
         }
       }
