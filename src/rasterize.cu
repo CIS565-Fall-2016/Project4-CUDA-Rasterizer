@@ -777,14 +777,18 @@ __global__ void _rasterization(int numIndices, Primitive *dev_primitive, int wid
 								{
 									//printf("no texture\n");
 									// test texcoord;
-									glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * barycentricCoord;
-									frag[idx].color = glm::vec3(texcoord.x, texcoord.y, 0);
+									//glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * barycentricCoord;
+									//frag[idx].color = glm::vec3(texcoord.x, texcoord.y, 0);
+									frag[idx].color = glm::vec3(1.0f, 0.0f, 0);
 								}
 								else
 								{
 									// texture
 									//printf("texture\n");
-									glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * barycentricCoord;
+									glm::vec3 persBarycentricCoord = glm::vec3(barycentricCoord.x / triangle[0].eyePos.z, 
+										barycentricCoord.y / triangle[1].eyePos.z, barycentricCoord.z / triangle[2].eyePos.z);
+									glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * persBarycentricCoord 
+										* (1.0f / glm::dot(glm::vec3(1.0f, 1.0f, 1.0f), persBarycentricCoord));
 									// look at one point's texture.
 									int texx = floor(0.5f + texcoord.x * (triangle[0].texWidth - 1));
 									int texy = floor(0.5f + texcoord.y * (triangle[0].texHeight - 1));
