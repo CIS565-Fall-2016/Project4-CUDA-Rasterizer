@@ -23,9 +23,9 @@
 #define LINES 0
 #define POINTS 0
 
-#define DIFFUSE 1
+#define DIFFUSE 0
 #define SPECULAR 0
-#define TOON 0
+#define TOON 1
 
 #define BILINEAR 1
 #define PERSPECTIVE_CORRECT 1
@@ -225,11 +225,10 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			/*Toon Shading:
 				http://rbwhitaker.wikidot.com/toon-shader
 			*/
-			// apply gamma correction (assume ambientColor, diffuseColor and specColor
-			// have been linearized, i.e. have no gamma correction in them)
+			
 			glm::vec3 colorGammaCorrected = pow(colorLinear, glm::vec3(1.f / screenGamma));
 			colorLinear = diffuseColor * costheta;
-			// Discretize the intensity, based on a few cutoff points
+			
 			if (costheta > 0.75)
 				colorLinear = glm::vec3(1.0, 1, 1) * colorLinear;
 			else if (costheta > 0.5)
