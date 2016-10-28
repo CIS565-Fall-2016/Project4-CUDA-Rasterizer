@@ -44,7 +44,8 @@ Sometimes sampling the textures leaves us with rough-edged textures (left). As a
 
 
 ### Backface Culling
-Backface culling involves 
+Backface culling involves a preprocessing step that determines whether a triangle is visible in the perspective of the viewer. This is determined by the chirality of the triangle primitives. If they are counter-clockwise when a front-facing triangle should be clockwise, then we can ignore that triangle. We also perform a stream compaction to ensure that all primitives that are culled are not accounted for in our kernel launches. Furthermore, depending on the perspective of the camera, more or less polygons will be culled. Below demonstrates the percentage of culled primitives from a side-view perspective (default perspective when launched). 
+
 <img src="renders/Capture.PNG" />
 ### Non-Photorealistic Rendering (NPR)
 Before the final step in calculating the lighting of each fragment, we manipulate our fragment buffer by applying a NPR filter over it. In our case, we apply an oil painting effect onto our rasterized image. For each pixel, we search in a radius around it and cache all color intensities (determined by avg RGB value from 0-255). By caching all color intensities, we map them to the sum of all nearby RGB values of each intensity band. We then select the mode intensity and average all RGB values and set that pixel to the averaged RGB value. The parameters INTENSITY controls the blockyness of the filter and the RADIUS tunes the size of the "brush". The current settings for the pictures below are set to a radius of 4 and intensity of 25. We also vandalized the Cesium car a bit to demo the effect a bit better :).
