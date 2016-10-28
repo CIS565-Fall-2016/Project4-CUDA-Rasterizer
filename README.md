@@ -28,13 +28,13 @@ Milk truck | Duck
 VC
 ![](imgs/VC1.gif)
 
-Cow with Lines | VC with Lines
-:-------------------------:|:-------------------------: 
-![](imgs/cow2.gif) | ![](imgs/VC2.gif)
+Cow with Lines | VC with Lines |Truck with Lines 
+:-------------------------:|:-------------------------:  |:-------------------------:
+![](imgs/cow2.gif) | ![](imgs/VC2.gif) |![](imgs/truck2.gif)
 
-Truck with Lines | Flower with Lines
-:-------------------------:|:-------------------------: 
-![](imgs/truck2.gif) | ![](imgs/flower.gif)
+
+
+
 
 Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
@@ -50,9 +50,9 @@ Checkerboard with bilinear filtering | Checkerboard without bilinear filtering
 
 
 
-Cow | Di|Engine | Buggy
-:-------------------------:|:-------------------------: |:-------------------------:|:-------------------------: 
-![](imgs/cow1.gif) | ![](imgs/di1.gif) |![](imgs/engine1.gif) | ![](imgs/buggy1.gif)
+Cow | Di|Engine | Buggy| Flower with Lines
+:-------------------------:|:-------------------------: |:-------------------------:|:-------------------------: |:-------------------------: 
+![](imgs/cow1.gif) | ![](imgs/di1.gif) |![](imgs/engine1.gif) | ![](imgs/buggy1.gif)  | ![](imgs/flower.gif)
 
 # Analysis
 
