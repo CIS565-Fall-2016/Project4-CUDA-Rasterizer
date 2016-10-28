@@ -97,7 +97,7 @@ void mainLoop() {
 //-------------------------------
 float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
-float x_angle = 0.0f, y_angle = 0.0f;
+float x_angle = 0.0f, y_angle = 0.0f;bool flag = false;int c = 0;
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
@@ -119,7 +119,14 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
-	rasterize(dptr, MVP, MV, MV_normal);
+	
+	//if (!flag)
+	{
+		rasterize(dptr, MVP, MV, MV_normal, c);
+		c++;
+		flag = true;
+	}
+	
     cudaGLUnmapBufferObject(pbo);
 
     frame++;

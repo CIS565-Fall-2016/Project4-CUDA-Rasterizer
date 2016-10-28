@@ -62,7 +62,9 @@ float calculateBarycentricCoordinateValue(glm::vec2 a, glm::vec2 b, glm::vec2 c,
     baryTri[0] = glm::vec3(a, 0);
     baryTri[1] = glm::vec3(b, 0);
     baryTri[2] = glm::vec3(c, 0);
-    return calculateSignedArea(baryTri) / calculateSignedArea(tri);
+	float signedArea = calculateSignedArea(tri);
+	if (fabs(signedArea) < EPSILON) return -1.0f;
+	return calculateSignedArea(baryTri) / signedArea;
 }
 
 // CHECKITOUT
@@ -99,3 +101,16 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
            + barycentricCoord.y * tri[1].z
            + barycentricCoord.z * tri[2].z);
 }
+
+__host__ __device__ static
+glm::vec3 getTextureColor(unsigned char *pTex, glm::vec2 texcoord, int w, int h, int component) {
+		int x = (w - 1.f) * texcoord.x;
+		int y = (h - 1.f) * texcoord.y;
+		float scale = 1.0f / 255.0f;
+		int index = x + y * w;
+
+		return scale * glm::vec3(pTex[index * component],
+			pTex[index * component + 1],
+			pTex[index * component + 2]);
+}
+
