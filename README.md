@@ -33,7 +33,15 @@ CUDA Rasterizer
 
 # Rasterizer
 
-The bottleneck of the rasterizer happens in the _rasterize kernel. While all triangles are processed in parallel, we still need to use a for loop through the triangle bounding boxes. Each _rasterize kernel is bound by O(n<sup>2</sup>)
+The rasterizer implements 
+
+![](renders/videos/centaur.gif)
+
+# Features
+
+- [UV texture mapping](##UVTextureMapping)
+
+Added a new material struct. Passing by materials.
 
 # Flags
 
@@ -53,21 +61,38 @@ The following header flags can be found in `main.cpp`:
 - `#define USE_HEAD_MODEL`: Uncomment if using the `head.gltf` model
 - `#define USE_ENGINE_MODEL`: Uncomment if using the `2_cylinder_engine.gltf` model
 
-# Features
-- [UV texture mapping](##UVTextureMapping)
+# Performance analysis
 
-Added a new material struct. Passing by materials.
+The bottleneck of the rasterizer happens in the `_rasterize` kernel. While all triangles are processed in parallel, we still need to use a for loop through the triangle bounding boxes. Each `_rasterize` kernel is bounded by O(n<sup>2</sup>).
+
+For testing, I am using the following scenes:
+
+|   | Triangle count | Source | 
+|---|---|---|
+| Cow | 5804 | [gltfs](gltfs/cow/cow.gltf) |
+| Head | 17684 | [gltfs](gltfs/head/head.gltf) |
+|2 cylinder engine| 121496 | [gltfs](gltfs/2_cylinder_engine/2_cylinder_engine.gltf) |
+
+
+The following graph shows the execution time in microseconds:
+
+![](renders/analysis/head_20s_kernel_time)
 
 ## UV Texture Mapping
 ### 1. Perspective correct
 
-[insert photos here]
 
 ### 2. Bilinear filtering
 
 Toggle with `#define BILINEAR_FILTERING`
 
-[insert photos here]
+Bilinear filtering is an antialiasing technique that averages the neighboring texels of a texel to create smooth effect when the texture is zoomed in or zoomed out.
+
+Below shows the comparison with bilinear filtering on (left) and off (right). Bilinear filtering makes the wavy curve on the Cesium logo appear to be smoother and not pixelated.
+
+Bilinear **ON**        | Bilinear **OFF**
+:-------------------------:|:-------------------------:
+![](renders/cesiumtruck_bilinear.png)|![](renders/cesiumtruck_no_bilinear.png)
 
 ## Order independent transparency using k-buffer
 
