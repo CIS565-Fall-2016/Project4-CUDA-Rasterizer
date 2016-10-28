@@ -10,13 +10,7 @@ Milk truck | Duck
 :-------------------------:|:-------------------------: 
 ![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
 
-Cow | Di
-:-------------------------:|:-------------------------: 
-![](imgs/cow1.gif) | ![](imgs/di1.gif) 
 
-Engine | Buggy
-:-------------------------:|:-------------------------: 
-![](imgs/engine1.gif) | ![](imgs/buggy1.gif)
 
 VC
 ![](imgs/VC1.gif)
@@ -32,6 +26,14 @@ Truck with Lines | Flower with Lines
 Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
 ![](imgs/duck3.gif) | ![](imgs/duck4.gif)
+
+Cow | Di
+:-------------------------:|:-------------------------: 
+![](imgs/cow1.gif) | ![](imgs/di1.gif) 
+
+Engine | Buggy
+:-------------------------:|:-------------------------: 
+![](imgs/engine1.gif) | ![](imgs/buggy1.gif)
 
 #PS: looking for models: just we & just tank
 
