@@ -676,8 +676,8 @@ void _vertexTransformAndAssembly(
 				primitive.dev_diffuseTex, primitive.diffuseTexWidth, primitive.diffuseTexHeight);
 		}
 		else {
-			glm::vec3 color(0.f);
-			color[vid % 3] = 1.f;
+			glm::vec3 color(0.f, 1.f, 0.f);
+			//color[vid % 3] = 1.f;
 			primitive.dev_verticesOut[vid].col = color;
 		}
 		
@@ -862,7 +862,7 @@ void rasterize(uchar4 *pbo,
 	
 	int numRemainingPrimitives = totalNumPrimitives;
 	if (backfaceCulling) {
-		thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + totalNumPrimitives, is_backface()) - dev_thrust_primitives;
+		numRemainingPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + totalNumPrimitives, is_backface()) - dev_thrust_primitives;
 	}
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));

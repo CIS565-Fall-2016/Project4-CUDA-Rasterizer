@@ -14,7 +14,7 @@
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
 
-bool textureMapping = false, bilinearFiltering = false, backfaceCulling = false;
+bool textureMapping = true, bilinearFiltering = false, backfaceCulling = false;
 void printState(bool printTextures = true, bool printFiltering = true, bool printBackface = true) {
 	if (printTextures && printFiltering && printBackface)
 		printf("----- Settings -----\n\n");
@@ -101,6 +101,10 @@ void mainLoop() {
         // VAO, shader program, and texture already bound
         glDrawElements(GL_TRIANGLES, 6,  GL_UNSIGNED_SHORT, 0);
         glfwSwapBuffers(window);
+
+		/*if (frame > 0) {
+			glfwSetWindowShouldClose(window, GL_TRUE);
+		}*/
     }
     glfwDestroyWindow(window);
     glfwTerminate();
@@ -110,7 +114,7 @@ void mainLoop() {
 //---------RUNTIME STUFF---------
 //-------------------------------
 float scale = 1.0f;
-float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
+float x_trans = 0.0f, y_trans = -1.5f, z_trans = -5.0f;
 float x_angle = 0.0f, y_angle = 0.0f;
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
