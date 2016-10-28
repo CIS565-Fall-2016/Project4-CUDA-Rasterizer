@@ -17,8 +17,9 @@
 #define USEBILINFILTER 0 && USETEXTURE
 #define USEPERSPECTIVECORRECTION 0 && USETEXTURE
 #define USETILE 0
-#define USELINES 0  && 1-USETEXTURE
-#define USEPOINTS 1 && 1-USETEXTURE
+#define USELINES 1  && 1-USETEXTURE
+#define USEPOINTS 0 && 1-USETEXTURE
+#define SPARSITY 20 //sparsity of point cloud (if on)
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -822,10 +823,10 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		color += curPrim.v[0].eyeNor;
 		color = glm::normalize(color);
 		//int stepsize = (int)glm::cos((float)randomnum);
-		int stepsize = 20;
-		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, stepsize);
-		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, stepsize);
-		devRasterizePoints(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments, stepsize);
+		
+		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
+		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
+		devRasterizePoints(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments, SPARSITY);
 #endif
 		//}
 	}

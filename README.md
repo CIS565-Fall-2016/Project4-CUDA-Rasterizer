@@ -25,6 +25,10 @@ Cow with Lines | VC with Lines
 :-------------------------:|:-------------------------: 
 ![](imgs/cow2.gif) | ![](imgs/VC2.gif)
 
+Truck with Lines | Flower with Lines
+:-------------------------:|:-------------------------: 
+![](imgs/truck2.gif) | ![](imgs/flower.gif)
+
 Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
 ![](imgs/duck3.gif) | ![](imgs/duck4.gif)
