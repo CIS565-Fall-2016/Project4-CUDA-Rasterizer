@@ -22,6 +22,7 @@ static bool antialias = false;
 static bool supersample = false;
 static bool culling = true;
 static bool testingmode = false;
+static bool aabbcheck = true;
 
 //-------------------------------
 //-------------MAIN--------------
@@ -134,7 +135,10 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
-    rasterize(dptr, MVP, MV, MV_normal, displaymode, perspectivecorrect, spec, antialias, supersample, culling, testingmode);
+    rasterize(dptr, MVP, MV, MV_normal, 
+              displaymode, perspectivecorrect, 
+              spec, antialias, supersample, 
+              culling, testingmode, aabbcheck);
     cudaGLUnmapBufferObject(pbo);
 
     frame++;
@@ -369,6 +373,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         else if (key == GLFW_KEY_T){
             testingmode = !testingmode;
             printf("\ntesting mode = %d", testingmode);
+        }
+        else if (key == GLFW_KEY_B){
+            aabbcheck = !aabbcheck;
+            printf("\nbounding box check = %d", aabbcheck);
         }
     }
 }

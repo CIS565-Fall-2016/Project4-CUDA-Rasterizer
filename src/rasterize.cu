@@ -863,7 +863,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 __global__
 void scanline(int w, int h, Fragment* dev_fragBuffer, int numidx, int idbegin,
 Primitive* dev_primitives, PrimitiveDevBufPointers primitive,
-int mode, bool perspectivecorrect, float xoffset, float yoffset)
+int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -886,17 +886,20 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset)
                 glm::vec3(dev_primitives[i].v[1].pos),
                 glm::vec3(dev_primitives[i].v[2].pos) };
 
-            // bounding box check
-            float eps = 0.2f;
-            float minx = fminf(p[0].x - eps, fminf(p[1].x - eps, p[2].x - eps));
-            float maxx = fmaxf(p[0].x + eps, fmaxf(p[1].x + eps, p[2].x + eps));
-            float miny = fminf(p[0].y - eps, fminf(p[1].y - eps, p[2].y - eps));
-            float maxy = fmaxf(p[0].y + eps, fmaxf(p[1].y + eps, p[2].y + eps));
 
-            if (minx > x || maxx < x || miny > y || maxy < y)
-                continue;
-            // bounding box end
-            
+            if (aabbcheck)
+            {
+                // bounding box check
+                float eps = 0.2f;
+                float minx = fminf(p[0].x - eps, fminf(p[1].x - eps, p[2].x - eps));
+                float maxx = fmaxf(p[0].x + eps, fmaxf(p[1].x + eps, p[2].x + eps));
+                float miny = fminf(p[0].y - eps, fminf(p[1].y - eps, p[2].y - eps));
+                float maxy = fmaxf(p[0].y + eps, fmaxf(p[1].y + eps, p[2].y + eps));
+
+                if (minx > x || maxx < x || miny > y || maxy < y)
+                    continue;
+                // bounding box end
+            }
             /*
             // remove backfaces without thrust
             if (dev_primitives[i].v[0].eyeNor.z < 0.0f && 
@@ -1312,7 +1315,8 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset)
 // Perform rasterization.
 //
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal,
-               int displaymode, bool perepectivecorrect, bool spec, bool aa, bool supersample, bool culling, bool testingmode) {
+               int displaymode, bool perepectivecorrect, bool spec, bool aa, bool supersample, 
+               bool culling, bool testingmode, bool aabbcheck) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width - 1) / blockSize2d.x + 1,
@@ -1442,7 +1446,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                 dev_primitivestmp,
                                                 *p,
                                                 displaymode,
-                                                perepectivecorrect, 0, 0);
+                                                perepectivecorrect, 0, 0,
+                                                aabbcheck);
     checkCUDAError("scanline");
     //accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
     //checkCUDAError("accumframebuffers");
@@ -1479,7 +1484,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     dev_primitivestmp,
                                                     *p,
                                                     displaymode,
-                                                    perepectivecorrect, 0.2, 0);
+                                                    perepectivecorrect, 0.2, 0,
+                                                    aabbcheck);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
@@ -1494,7 +1500,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     dev_primitivestmp,
                                                     *p,
                                                     displaymode,
-                                                    perepectivecorrect, 0, 0.25);
+                                                    perepectivecorrect, 0, 0.25,
+                                                    aabbcheck);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
@@ -1509,7 +1516,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     dev_primitivestmp,
                                                     *p,
                                                     displaymode,
-                                                    perepectivecorrect, 0.25, 0.2);
+                                                    perepectivecorrect, 0.25, 0.2,
+                                                    aabbcheck);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
