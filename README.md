@@ -21,6 +21,9 @@ Engine | Buggy
 VC
 ![](imgs/VC1.gif)
 
+Cow with Lines | VC with Lines
+:-------------------------:|:-------------------------: 
+![](imgs/cow2.gif) | ![](imgs/VC2.gif)
 
 #PS: looking for models: just we & just tank
 
