@@ -24,7 +24,7 @@
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
 #define getIndex(x, y, width) ((x) + (y) * (width))
-#define samplesPerPixel 2
+#define samplesPerPixel 3
 
 
 #define DEBUG 1
@@ -160,17 +160,18 @@ void _sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 void rasterizeInit(int w, int h) {
   width = w;
   height = h;
+  int numSamples = samplesPerPixel * width * height;
 
   cudaFree(dev_fragmentBuffer);
-  cudaMalloc(&dev_fragmentBuffer, width * height * sizeof(Fragment));
-  cudaMemset(dev_fragmentBuffer, 0, samplesPerPixel * width * height * sizeof(Fragment));
+  cudaMalloc(&dev_fragmentBuffer, numSamples * sizeof(Fragment));
+  cudaMemset(dev_fragmentBuffer, 0, numSamples * sizeof(Fragment));
 
   cudaFree(dev_framebuffer);
   cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
   cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
   cudaFree(dev_depth);
-  cudaMalloc(&dev_depth, samplesPerPixel * width * height * sizeof(int));
+  cudaMalloc(&dev_depth, numSamples * sizeof(unsigned int));
 
   checkCUDAError("rasterizeInit");
 }
@@ -715,18 +716,6 @@ __device__
 }
 
 __global__
-void _fragmentInit(Fragment fragments[], int n_fragments) {
-	if (IDx < n_fragments) {
-		Fragment &fragment = fragments[IDx];
-		fragment.color = glm::vec3(0);
-		fragment.viewPos = glm::vec3(0);
-		fragment.viewNorm = glm::vec3(0);
-		fragment.numSamples = 0;
-	}
-
-}
-
-__global__
 void _rasterize(int n_primitives, int height, int width,
 const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   if (IDx >= n_primitives) return;
@@ -812,6 +801,8 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
             //atomicAddVec3(fragment.color, color);
             fragment.color = color;
+            int id = index;
+            debug("color in rasterize=%f %f %f\n", color.r, color.g, color.b);
           }
         }
       }
@@ -828,7 +819,8 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   int index = getIndex(IDx, IDy, w);
   int offset;
   range(offset, 0, samplesPerPixel) {
-    Fragment frag = fragmentBuffer[samplesPerPixel * index + offset];
+    int sampleId = samplesPerPixel * index + offset;
+    Fragment frag = fragmentBuffer[sampleId];
     glm::vec3 lightPos(0);
     glm::vec3 L = glm::normalize(glm::vec3(0, 1, 1));//lightPos - frag.viewPos);
     glm::vec3 V = glm::normalize(-frag.viewPos);
@@ -837,6 +829,11 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
     if (SHOW_TEXTURE) {
       intensity = 1;
     }
+    int id = sampleId;
+    //debug("color in render=%f %f %f\n", 
+    //  frag.color.r,
+    //  frag.color.g,
+    //  frag.color.b);
     framebuffer[index] = intensity * frag.color / (float)samplesPerPixel;
   }
 }
@@ -852,7 +849,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   // Execute your rasterization pipeline here
   cudaMemset(dev_primitives, 0, width * height * sizeof(Primitive));
-  cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+  cudaMemset(dev_fragmentBuffer, 0, samplesPerPixel * width * height * sizeof(Fragment));
 
   // (See README for rasterization pipeline outline.)
 
@@ -897,10 +894,6 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   //_initDepth << <blockSize, sampleBlockSize2d >> >(numSamples, dev_depth);
   cudaMemset(dev_depth, 0xff, samplesPerPixel * width * height * sizeof(dev_depth[0]));
   cudaMemset(dev_framebuffer, 0, width * height * sizeof(Fragment));
-
-  int numFragments = height * width * samplesPerPixel;
-  dim3 blockSizeFrag = numFragments / numThreadsPerBlock.x + 1;
-  _fragmentInit<<<blockSizeFrag, numThreadsPerBlock>>>(dev_fragmentBuffer, numFragments);
   
   // TODO: rasterize
   dim3 blockSize = totalNumPrimitives / numThreadsPerBlock.x + 1;
