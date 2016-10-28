@@ -26,6 +26,7 @@
 #define getIndex(x, y, width) ((x) + (y) * (width))
 #define samplesPerPixel 16
 #define ambientLight 0.1
+#define tuneShade 0
 
 
 #define DEBUG 1
@@ -730,12 +731,9 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   AABB aabb = getAABBForTriangle(tri);
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
-
-      // zero out values of fragment struct
-
+      thrust::default_random_engine seed(getIndex(x, y, width));
       range(offset, 0, samplesPerPixel) {
         int index = samplesPerPixel * getIndex(width - x, height - y, width) + offset;
-        thrust::default_random_engine seed(index);
         glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
@@ -756,9 +754,9 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
+      thrust::default_random_engine seed(getIndex(x, y, width));
       range(offset, 0, samplesPerPixel) {
         int index = samplesPerPixel *  getIndex(width - x, height - y, width) + offset;
-        thrust::default_random_engine seed(index);
         glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
@@ -768,6 +766,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
           // if the sample is not occluded
           if ((unsigned int)depth == depths[index]) {
+            //debug(".");
             //debugDepths("depth=%u\n", depth);
             Fragment &fragment = fragments[index];
 
@@ -799,7 +798,6 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
             //atomicAddVec3(fragment.color, color);
             fragment.color = color;
-            int id = index;
           }
         }
       }
@@ -823,7 +821,9 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
     glm::vec3 V = glm::normalize(-frag.viewPos);
     glm::vec3 H = glm::normalize(L + V);
     float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2) + ambientLight;
-    int id = sampleId;
+    if (tuneShade) {
+      intensity = intensity > 0.5 ? 1 : ambientLight;
+    }
     framebuffer[index] += intensity * frag.color / (float)samplesPerPixel;
   }
 }
