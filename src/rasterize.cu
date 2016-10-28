@@ -19,6 +19,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
+#define BLOCK_WIDTH 16
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -117,6 +118,9 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
+static glm::vec3 *dev_preeffectbuffer = NULL;
+static int *dev_mutex = NULL;
+
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
 /**
@@ -172,8 +176,60 @@ void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuf
 
 		}
 
-		framebuffer[index] = fragmentBuffer[index].color * diffuse + specular;
+		framebuffer[index] = fragmentBuffer[index].color;// *diffuse;// +specular;
     }
+}
+
+__global__
+void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+
+	int index = x + (y * w);
+
+	if (x < w && y < h) {
+		// Initialize shared memory
+		__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
+	
+		int local_x = x % BLOCK_WIDTH;
+		int local_y = y % BLOCK_WIDTH;
+		int local_index = local_x + (local_y * BLOCK_WIDTH);
+
+		// Move global mem into shared memory
+		neighbors[local_index] = framebuffer_in[index];
+
+		__syncthreads();
+		
+		// Blur
+		float avg = 1.0f / (11.0f * 11.0f);
+		int num_shared = 0;
+		int num_global = 0;
+		glm::vec3 final_color(0.0f);
+		for (int i = -5; i <= 5; i++) {
+			for (int j = -5; j <= 5; j++) {
+				int neigh = local_x + i + ((local_y + j) * BLOCK_WIDTH);
+			
+				if (neigh < 0 || neigh >= (BLOCK_WIDTH * BLOCK_WIDTH)) {
+					num_global++;
+					// Can't use shared memory
+					//continue;
+					neigh = x + i + ((y + j) * w);
+					if (neigh > 0 && (x + i) < w && (y + j) < h) {
+						final_color += framebuffer_in[neigh];
+					}
+				}
+				else {
+					// Use shared memory
+					num_shared++;
+					final_color += neighbors[neigh];
+				}
+			}
+		}
+		if (x > 103) {
+			//printf("Global: %i, Shared: %i\n", num_global, num_shared);
+		}
+		framebuffer_out[index] = final_color * avg;
+	}
 }
 
 /**
@@ -189,6 +245,13 @@ void rasterizeInit(int w, int h) {
     cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
+	cudaMalloc(&dev_mutex, width * height * sizeof(int));
+	cudaMemset(dev_mutex, 0, width * height * sizeof(int));
+
+	cudaFree(dev_preeffectbuffer);
+	cudaMalloc(&dev_preeffectbuffer, width*height*sizeof(glm::vec3));
+	cudaMemset(dev_preeffectbuffer, 0, width*height*sizeof(glm::vec3));
+
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
 
@@ -710,7 +773,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 }
 
 __global__
-void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *fragmentbuffer,
+void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitives, Fragment *fragmentbuffer,
 							int *depth_buffer) {
 	// primitive id
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -749,16 +812,23 @@ void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *
 
 					// Depth test
 					int index = i * w + j;
-
-					if (atomicMin(&depth_buffer[index], idepth) > idepth) {
-						
-						fragmentbuffer[index].color = glm::vec3(.2f, 0.3f, 0.0f);
-						fragmentbuffer[index].eyePos = bary.x * p.v[0].eyePos +
-							bary.y * p.v[1].eyePos + bary.z * p.v[2].eyePos;
-						fragmentbuffer[index].eyeNor = bary.x * p.v[0].eyeNor + 
-							bary.y * p.v[1].eyeNor + bary.z * p.v[2].eyeNor;
-
-					}
+					bool isSet;
+					do {
+						isSet = (atomicCAS(&mutex[index], 0, 1) == 0);
+						if (isSet) {
+							if (depth_buffer[index] > idepth) {
+								depth_buffer[index] = idepth;
+								fragmentbuffer[index].color = glm::vec3((float)pid / t, 0.3f, 0.0f);
+								fragmentbuffer[index].eyePos = bary.x * p.v[0].eyePos +
+									bary.y * p.v[1].eyePos + bary.z * p.v[2].eyePos;
+								fragmentbuffer[index].eyeNor = bary.x * p.v[0].eyeNor +
+									bary.y * p.v[1].eyeNor + bary.z * p.v[2].eyeNor;
+							}
+						}
+						if (isSet) {
+							mutex[index] = 0;
+						}
+					} while (!isSet);
 				}	
 			}
 		}
@@ -769,12 +839,16 @@ void _rasterize_scanlines(int t, int w, int h, Primitive* primitives, Fragment *
  */
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
 	// timers
-	cudaEvent_t rast_start, rast_stop;
+	cudaEvent_t rast_start, rast_stop,
+		effects_start, effects_stop;
 
 	cudaEventCreate(&rast_start);
 	cudaEventCreate(&rast_stop);
 
-    int sideLength2d = 8;
+	cudaEventCreate(&effects_start);
+	cudaEventCreate(&effects_stop);
+
+	int sideLength2d = BLOCK_WIDTH;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
 		(height - 1) / blockSize2d.y + 1);
@@ -817,33 +891,57 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	
 	// Wipe fragment buffer
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	
+	cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+
 	// Initialize depth buffer to INT_MAX
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, INT_MAX, dev_depth);
 	
-	// Rasterize
+	///////////////
+	// Rasterize //
+	///////////////
 	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 	
 	// Timer
-	
 	cudaEventRecord(rast_start);
 
 	_rasterize_scanlines << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height,
-		dev_primitives, dev_fragmentBuffer, dev_depth);
+		dev_mutex, dev_primitives, dev_fragmentBuffer, dev_depth);
 
-	//cudaEventRecord(rast_stop);
-	
-	//float milliseconds = 0;
-	//cudaEventElapsedTime(&milliseconds, rast_start, rast_stop);
-	
-	//std::cout << milliseconds << " milliseconds" << std::endl;
-	
-	// Copy depthbuffer colors into framebuffer
+	cudaEventRecord(rast_stop);
+	cudaEventSynchronize(rast_stop);
+
+	// Print time
+	float rast_milliseconds = 0;
+	cudaEventElapsedTime(&rast_milliseconds, rast_start, rast_stop);
+	std::cout << "Rasterizer: " << rast_milliseconds << " milliseconds" << std::endl;
+
+	// Set up light
 	Light l;
 	l.position = glm::vec3(1.0, 3.0, -10.0);
 	l.intensity = 2.0;
-	render << <blockCount2d, blockSize2d >> >(width, height, l, dev_fragmentBuffer, dev_framebuffer);
+
+	// Copy depthbuffer colors into framebuffer
+
+	render << <blockCount2d, blockSize2d >> >(width, height, l, dev_fragmentBuffer, dev_preeffectbuffer);
 	checkCUDAError("fragment shader");
+
+	/////////////
+	// Effects //
+	/////////////
+
+	cudaEventRecord(effects_start);
+	
+	// Blur
+	blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
+
+	cudaEventRecord(effects_stop);
+	cudaEventSynchronize(effects_stop);
+	
+	// Print effects time
+	float effects_milliseconds = 0;
+	cudaEventElapsedTime(&effects_milliseconds, effects_start, effects_stop);
+	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
+
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
@@ -887,5 +985,10 @@ void rasterizeFree() {
 	cudaFree(dev_depth);
 	dev_depth = NULL;
 
+	cudaFree(dev_mutex);
+	dev_mutex = NULL;
+
+	cudaFree(dev_preeffectbuffer);
+	dev_preeffectbuffer = NULL;
     checkCUDAError("rasterize Free");
 }
