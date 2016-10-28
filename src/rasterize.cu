@@ -11,6 +11,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <thrust/random.h>
+#include <thrust/remove.h>
+#include <thrust/device_ptr.h>
 #include <util/checkCUDAError.h>
 #include <util/tiny_gltf_loader.h>
 #include "rasterizeTools.h"
@@ -18,11 +20,11 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define TEXTURE 1
-#define BILINEAR 1
+#define TEXTURE 0
+#define BILINEAR 0
 #define CULLING 1
 
-namespace {
+namespace Rasterizer {
 
 	typedef unsigned short VertexIndex;
 	typedef glm::vec3 VertexAttributePosition;
@@ -108,6 +110,7 @@ namespace {
 	};
 
 }
+using namespace Rasterizer;
 
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
@@ -534,8 +537,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 					// You can only worry about this part once you started to 
 					// implement textures for your rasterizer
-					TextureData* dev_diffuseTex = NULL;
 #if TEXTURE == 1
+					TextureData* dev_diffuseTex = NULL;
 					int diffuseTexWidth = 0;
 					int diffuseTexHeight = 0;
 
@@ -723,6 +726,7 @@ __global__ void _rasterize(
 	}
 	
 	Primitive & prim = dev_primitives[pid];
+
 	const glm::vec3 tri[3] = {
 		glm::vec3(prim.v[0].pos),
 		glm::vec3(prim.v[1].pos),
@@ -793,7 +797,7 @@ glm::vec3 getPixelColor(int x, int y, int w, int h, TextureData * texture) {
 	return glm::vec3(texture[3 * texIdx], texture[3 * texIdx + 1], texture[3 * texIdx + 2]) / 255.0f;
 }
 
-
+#if TEXTURE == 1
 __global__ void _loadTextures(int w, int h, Fragment * dev_fragmentBuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -826,10 +830,18 @@ __global__ void _loadTextures(int w, int h, Fragment * dev_fragmentBuffer) {
 		frag.dev_diffuseTex[3 * idx],
 		frag.dev_diffuseTex[3 * idx + 1],
 		frag.dev_diffuseTex[3 * idx + 2]);
-
 #endif
-	
 }
+#endif
+
+#if CULLING == 1
+struct backfacing {
+	__host__ __device__ bool operator()(const Primitive & p) {
+		//return glm::dot(p.v[0].eyeNor, -p.v[0].eyePos) < 0.0f; does not work perfectly!
+		return glm::cross(p.v[1].eyePos - p.v[0].eyePos, p.v[2].eyePos - p.v[0].eyePos)[2] < 0;
+	}
+};
+#endif
 
 /**
  * Perform rasterization.
@@ -879,10 +891,18 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaMemset(dev_mutex, false, width * height * sizeof(bool));
 	initDepths << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
 	
+	// Backface Culling
+	int numPrimitives = totalNumPrimitives;
+#if CULLING == 1
+	auto dev_thrust_primitives = thrust::device_pointer_cast(dev_primitives);
+	numPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numPrimitives, backfacing()) - dev_thrust_primitives;
+	checkCUDAError("backface culling");
+#endif
+
 	// TODO: rasterize
 	dim3 numThreadsPerBlock(128);
-	dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, width, height, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex);
+	dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(numPrimitives, width, height, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex);
 #if TEXTURE == 1
 	_loadTextures << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
 #endif
