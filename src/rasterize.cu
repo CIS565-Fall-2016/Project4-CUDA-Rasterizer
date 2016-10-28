@@ -379,10 +379,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
             return;
 
           // TODO: add new attributes for your PrimitiveDevBufPointers when you add new attributes
-          VertexIndex* dev_indices;
-          VertexAttributePosition* dev_position;
-          VertexAttributeNormal* dev_normal;
-          VertexAttributeTexcoord* dev_texcoord0;
+          VertexIndex* dev_indices = NULL;
+          VertexAttributePosition* dev_position = NULL;
+          VertexAttributeNormal* dev_normal = NULL;
+          VertexAttributeTexcoord* dev_texcoord0 = NULL;
 
           // ----------Indices-------------
 
@@ -649,10 +649,6 @@ void _vertexTransformAndAssembly(
   glm::vec4 screenDims(width, height, 1, 1);
   vertex.screenPos = screenDims * (clipPos / clipPos.w + glm::vec4(1, 1, 1, 0)) / 2.0f;
 
-  if (vertex.screenPos.y > height) {
-    debug("WFT: %d", vertex.screenPos.y);
-  }
-
   // Assemble all attribute arrays into the primitive array
   vertex.texcoord0 = vertexParts.texcoord0[IDx];
 }
@@ -704,7 +700,7 @@ float getFragmentDepth(glm::vec3 bcCoord, glm::vec3 tri[3]) {
   }
   else {
     return depth * INT_MAX;
-  }
+  };
 }
 
 __device__
@@ -777,14 +773,12 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
             fragment.viewNorm = glm::vec3(0);
             glm::vec2 texcoord(0);
             float texWeightNorm = 0;
-            int k;
-            range(k, 0, 3) {
-              float weight = barycentricCoord[k];
-              Vertex v = primitive.v[k];
+            range(i, 0, 3) {
+              float weight = barycentricCoord[i];
+              Vertex v = primitive.v[i];
 
-              fragment.viewNorm = weight * v.viewNorm;
-              fragment.viewPos = weight * v.viewPos;
-              //atomicAddVec3(fragment.viewNorm, weight * v.viewNor / (float)samplesPerPixel);
+              fragment.viewNorm += weight * v.viewNorm;
+              fragment.viewPos += weight * v.viewPos;
 
               float texWeight = weight / v.viewPos.z;
               texcoord += texWeight * v.texcoord0;
@@ -802,7 +796,6 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
             //atomicAddVec3(fragment.color, color);
             fragment.color = color;
             int id = index;
-            debug("color in rasterize=%f %f %f\n", color.r, color.g, color.b);
           }
         }
       }
@@ -822,7 +815,7 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
     int sampleId = samplesPerPixel * index + offset;
     Fragment frag = fragmentBuffer[sampleId];
     glm::vec3 lightPos(0);
-    glm::vec3 L = glm::normalize(glm::vec3(0, 1, 1));//lightPos - frag.viewPos);
+    glm::vec3 L = glm::normalize(glm::vec3(0, -1, -1));//lightPos - frag.viewPos);
     glm::vec3 V = glm::normalize(-frag.viewPos);
     glm::vec3 H = glm::normalize(L + V);
     float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2);
@@ -830,7 +823,6 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
       intensity = 1;
     }
     int id = sampleId;
-    //debug("color in render=%f %f %f\n", 
     //  frag.color.r,
     //  frag.color.g,
     //  frag.color.b);
