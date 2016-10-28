@@ -6,6 +6,19 @@ CUDA Rasterizer
 * Xiang Deng
 * Tested on:  Windows 10-Home, i7-6700U @ 2.6GHz 16GB, GTX 1060 6GB (Personal Computer)
 
+**Features:**
+
+* Basic pipeline
+  * Vertex assembly and vertex shader
+  * Primitive assembly
+  * Rasterization
+  * Depth test
+  * Fragment shader
+  * Fragment-to-depth-buffer writing (with atomics for race avoidance).
+  * A depth buffer for storing and depth testing fragments. 
+* UV texture mapping with bilinear texture filtering and perspective correct texture coordinates
+* Support for rasterizing additional primitives: lines and points
+
 Milk truck | Duck
 :-------------------------:|:-------------------------: 
 ![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
