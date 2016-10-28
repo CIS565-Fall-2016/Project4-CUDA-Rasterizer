@@ -176,7 +176,7 @@ void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuf
 
 		}
 
-		framebuffer[index] = fragmentBuffer[index].color;// *diffuse;// +specular;
+		framebuffer[index] = fragmentBuffer[index].color *diffuse + specular;
     }
 }
 
@@ -190,7 +190,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 	if (x < w && y < h) {
 		// Initialize shared memory
 		__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
-	
+		
 		int local_x = x % BLOCK_WIDTH;
 		int local_y = y % BLOCK_WIDTH;
 		int local_index = local_x + (local_y * BLOCK_WIDTH);
@@ -207,12 +207,13 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 		glm::vec3 final_color(0.0f);
 		for (int i = -5; i <= 5; i++) {
 			for (int j = -5; j <= 5; j++) {
-				int neigh = local_x + i + ((local_y + j) * BLOCK_WIDTH);
-			
-				if (neigh < 0 || neigh >= (BLOCK_WIDTH * BLOCK_WIDTH)) {
-					num_global++;
+				int neigh;
+				if ((local_x + i) < 0 || (local_x + i) >= BLOCK_WIDTH ||
+					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH) {
 					// Can't use shared memory
-					//continue;
+
+					//num_global++;
+					continue;
 					neigh = x + i + ((y + j) * w);
 					if (neigh > 0 && (x + i) < w && (y + j) < h) {
 						final_color += framebuffer_in[neigh];
@@ -220,14 +221,13 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 				}
 				else {
 					// Use shared memory
-					num_shared++;
-					final_color += neighbors[neigh];
+
+					//num_shared++;
+					final_color += neighbors[local_index + i + j * BLOCK_WIDTH];
 				}
 			}
 		}
-		if (x > 103) {
-			//printf("Global: %i, Shared: %i\n", num_global, num_shared);
-		}
+
 		framebuffer_out[index] = final_color * avg;
 	}
 }
@@ -818,7 +818,7 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 						if (isSet) {
 							if (depth_buffer[index] > idepth) {
 								depth_buffer[index] = idepth;
-								fragmentbuffer[index].color = glm::vec3((float)pid / t, 0.3f, 0.0f);
+								fragmentbuffer[index].color = glm::vec3(.2f, 0.3f, 0.0f);
 								fragmentbuffer[index].eyePos = bary.x * p.v[0].eyePos +
 									bary.y * p.v[1].eyePos + bary.z * p.v[2].eyePos;
 								fragmentbuffer[index].eyeNor = bary.x * p.v[0].eyeNor +
