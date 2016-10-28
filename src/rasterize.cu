@@ -25,8 +25,8 @@
 #define CULLING 1
 #define NPR 1
 
-#define RADIUS 6
-#define INTENSITY 50
+#define RADIUS 4
+#define INTENSITY 25
 
 namespace Rasterizer {
 
