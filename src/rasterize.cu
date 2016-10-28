@@ -11,10 +11,12 @@
 #include "rasterize.h"
 #include "common.h"
 
-#define USETEXTURE 1
-#define USELIGHT 1
-#define USEBILINFILTER 1
-#define USEPERSPECTIVECORRECTION 1
+#define USETEXTURE 0
+#define USELIGHT 0 && USETEXTURE
+#define USEBILINFILTER 0 && USETEXTURE
+#define USEPERSPECTIVECORRECTION 0 && USETEXTURE
+#define USETILE 0
+#define USELINES 1 && 1-USETEXTURE
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -676,12 +678,33 @@ __global__ void kernTextureMap(int width, int height, Fragment * fragments){
 	}
 
 }
+__device__ 
+glm::vec3 interpoline(glm::vec3 & x, glm::vec3 & y, float len){
+	return (1-len) * x + (len) * y;
+}
+__device__
+void devRasterizeLine(glm::vec3& pos, glm::vec3& pos2, glm::vec3 & color,
+int width, int height,
+Fragment* fragments){ 
+	glm::vec3 p;
+	int index;
+	glm::vec3 d = glm::abs(pos - pos2);
+	if (d.x>0 && d.y>0) {
 
+		int len = glm::max(d.x, d.y);
 
+		for (float i = 0; i <= len; ++i) {
+			
+			p = interpoline(pos, pos2, i / len);
+			index = (int)(p.x) + (int)(p.y) * width;
+			fragments[index].color = color;
+		}
+	}
+}
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
-	if (index < n && n>50){ //   (n too small) this is the crazy bug!!
+	if (index < n ){ //   (n too small) this is the crazy bug!!
 		Primitive & curPrim = primitives[index];
 		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
@@ -694,7 +717,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		int ymin = getMax(0,aabb.min.y);
 		int ymax = getMin(aabb.max.y,height-1);
 		
-		
+#if (USELINES==0)
 		int fixedDepth;
 		for (int x = xmin; x <= xmax; x++){
 			for (int y = ymin; y <= ymax; y++){ 
@@ -735,9 +758,48 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 				}
 			}
 		}
+#else
+		VertexOut & vertex1 = curPrim.v[1];
+		VertexOut & vertex2 = curPrim.v[2];
+		glm::vec3 color = vertex0.col;
+		color += curPrim.v[0].eyeNor ;
+		color = glm::normalize(color);
+		devRasterizeLine(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments);
+		devRasterizeLine(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments);
+		devRasterizeLine(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments);
+ 
+#endif
 		//}
 	}
 }
+
+//__global__ void kernTileRasterize(int n, Primitive * primitives, int* depths, int width, int height, int numTiles, Tile * tiles, Fragment* fragments){
+//	__shared__ unsigned int block_tile_indices[tileSizeR2];
+//	__shared__  Fragment block_tile_Frags[tileSizeR2];
+//
+//
+//
+//	Tile & curTile = dev_tiles[blockIdx.x];
+//	int numPrimsThisTile = curTile.numPrims;
+//	int numTilesThisThread = (numPrimsThisTile + blockDim.x - 1) / blockDim.x;
+//	int id0 = threadIdx.x*numTilesThisThread;
+//	int upperBnd = numTilesThisThread + id0;
+//	
+//
+//	__syncthreads();
+//
+//	for (int i = id0; i < upperBnd; i++){
+//		if (i < numPrimsThisTile){
+//			int pid; //TODO: pid = ?
+//
+//			Primitive & curPrim = primitives[pid];
+//			VertexOut & vertex0 = curPrim.v[0];
+//			glm::vec3 triangle[3] = { glm::vec3(curPrim.v[0].pos), glm::vec3(curPrim.v[1].pos), glm::vec3(curPrim.v[2].pos) };
+//		}
+//	}
+//
+//
+//}
 
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
 	int sideLength2d = 8;
@@ -781,7 +843,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	}
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);  // what if rasterizer change depth, need to do depth test after rasterizer
 
 	// TODO: rasterize 
 	dim3 numBlocksPrims((totalNumPrimitives + blockSize - 1) / blockSize);

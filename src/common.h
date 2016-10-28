@@ -8,6 +8,7 @@
 #include "rasterizeTools.h" 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include "util/utilityCore.hpp"
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -106,3 +107,20 @@ static glm::vec3 *dev_framebuffer = NULL;
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 #define blockSize 256
 
+//TILEs::::::::::::::::::::::
+ 
+#define tileSizeR2 256
+static int tileWidth;
+static int tileHeight;
+static int numTilesV;
+static int numTilesH;
+
+struct Tile{
+	float maxx;
+	float maxy;
+	float minx;
+	float miny;
+	int numPrims = 0;
+};
+//TILEs______________________
+static Tile * dev_tiles;
