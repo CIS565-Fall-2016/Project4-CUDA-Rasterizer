@@ -95,9 +95,25 @@ void mainLoop() {
 //-------------------------------
 //---------RUNTIME STUFF---------
 //-------------------------------
+
+/**
+ * parameters for cow.gltf using 1
+ */
+#if 0
+float scale = 0.1f;
+float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
+float x_angle = 0.0f, y_angle = -30.0f / 180.0f * PI;
+float fov = 65.0f;
+#else
 float scale = 1.0f;
-float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
-float x_angle = 0.0f, y_angle = 0.0f;
+float x_trans = 0.0f, y_trans = 0.0f, z_trans = -6.0f;
+float x_angle = 0.0f, y_angle = -30.0f / 180.0f * PI;
+float fov = 65.0f;
+#endif
+
+
+
+
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
@@ -106,6 +122,11 @@ void runCuda() {
 	glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
 		scale * ((float)width / (float)height),
 		-scale, scale, 1.0, 1000.0);
+
+	/*glm::mat4 P = glm::perspectiveFov(
+		fov, 
+		(float)width, (float)height,
+		0.1f, 1000.0f);*/
 
 	glm::mat4 V = glm::mat4(1.0f);
 
@@ -188,6 +209,7 @@ bool init(const tinygltf::Scene & scene) {
     glUseProgram(passthroughProgram);
     glActiveTexture(GL_TEXTURE0);
 
+	rasterization_mode = RASTERIZATION_MODE::Solid;
     return true;
 }
 
@@ -324,9 +346,35 @@ void errorCallback(int error, const char *description) {
 }
 
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, GL_TRUE);
-    }
+	if (action == GLFW_PRESS)
+	{
+		switch (key)
+		{
+		case GLFW_KEY_ESCAPE:
+			glfwSetWindowShouldClose(window, GL_TRUE);
+			break;
+		case GLFW_KEY_1:
+			printf("================================\n");
+			printf("========== Point MODE ==========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Point;
+			break;
+		case GLFW_KEY_2:
+			printf("================================\n");
+			printf("======== Wireframe MODE ========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Wireframe;
+			break;
+		case GLFW_KEY_3:
+			printf("================================\n");
+			printf("========== Solid MODE ==========\n");
+			printf("================================\n");
+			rasterization_mode = RASTERIZATION_MODE::Solid;
+			break;
+		default:
+			break;
+		}
+	}
 }
 
 //----------------------------

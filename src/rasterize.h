@@ -16,6 +16,13 @@ namespace tinygltf{
 	class Scene;
 }
 
+enum RASTERIZATION_MODE
+{
+	Point = 1,
+	Wireframe = 2,
+	Solid = 3
+};
+extern RASTERIZATION_MODE rasterization_mode;
 
 void rasterizeInit(int width, int height);
 void rasterizeSetBuffers(const tinygltf::Scene & scene);
