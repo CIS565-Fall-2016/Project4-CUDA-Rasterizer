@@ -95,7 +95,30 @@ bool isBarycentricCoordInBounds(const glm::vec3 barycentricCoord) {
  */
 __host__ __device__ static
 float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3]) {
-    return -(barycentricCoord.x * tri[0].z
+    return barycentricCoord.x * tri[0].z
            + barycentricCoord.y * tri[1].z
-           + barycentricCoord.z * tri[2].z);
+           + barycentricCoord.z * tri[2].z;
 }
+
+__host__ __device__ static
+glm::vec3 interpolate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3]) {
+	return barycentricCoord.x * tri[0]
+		+ barycentricCoord.y * tri[1]
+		+ barycentricCoord.z * tri[2];
+}
+
+__host__ __device__ static
+glm::vec2 interpolate2D(const glm::vec3 barycentricCoord, const glm::vec2 tri[3]) {
+	return barycentricCoord.x * tri[0]
+		+ barycentricCoord.y * tri[1]
+		+ barycentricCoord.z * tri[2];
+}
+
+__host__ __device__ static
+float interpolateFloat(const glm::vec3 barycentricCoord, const float tri[3]) {
+	return barycentricCoord.x * tri[0]
+		+ barycentricCoord.y * tri[1]
+		+ barycentricCoord.z * tri[2];
+}
+
+
