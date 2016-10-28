@@ -84,6 +84,7 @@ namespace {
      glm::vec3 viewPos;  // eye space position used for shading
      glm::vec3 viewNorm;
      TextureData* diffuseTex;
+	 float numSamples;
     // ...
   };
 
@@ -712,6 +713,7 @@ void _fragmentInit(Fragment fragments[], int n_fragments) {
 		fragment.color = glm::vec3(0);
 		fragment.viewPos = glm::vec3(0);
 		fragment.viewNorm = glm::vec3(0);
+		fragment.numSamples = 0;
 	}
 
 }
@@ -739,9 +741,10 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
       range(offset, 0, samplesPerPixel) {
         int sampleId = samplesPerPixel * fragmentId + offset;
+        glm::vec2 screenPos = glm::vec2(x, y);
 
         // determine if screenPos is inside polygon
-        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
+        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
         if (isBarycentricCoordInBounds(barycentricCoord)) {
           unsigned int depth = getFragmentDepth(barycentricCoord, tri);
 
@@ -758,8 +761,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
-      //range(offset, 0, samplesPerPixel) {
-		offset = 0;
+      range(offset, 0, samplesPerPixel) {
         int fragmentId = getIndex(x, y, width);
         int sampleId = samplesPerPixel * fragmentId + offset;
         glm::vec2 screenPos = glm::vec2(x, y);
@@ -773,7 +775,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
           if ((unsigned int)depth == depths[sampleId]) {
             Fragment &fragment = fragments[fragmentId];
 
-			fragment.viewPos = glm::vec3(screenPos, depth);
+			fragment.viewPos += glm::vec3(screenPos, depth);
             //atomicAddVec3(fragment.viewPos, glm::vec3(screenPos, depth) / (float)samplesPerPixel);
 
             // interpolate texcoord and texnorm
@@ -785,7 +787,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
               float weight = barycentricCoord[k];
               Vertex v = primitive.v[k];
 
-			  fragment.viewNorm += weight * v.viewNorm;
+			  fragment.viewNorm = weight * v.viewNorm;
               //atomicAddVec3(fragment.viewNorm, weight * v.viewNor / (float)samplesPerPixel);
 
               float texWeight = weight / v.viewPos.z;
@@ -801,11 +803,12 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
             TextureData *tex = primitive.diffuseTex; 
             glm::vec3 color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
 
-            fragment.color = color;
+			atomicAddVec3(fragment.color, color);
+			atomicAdd(&fragment.numSamples, 1.0f);
             //atomicAddVec3(fragment.color, color / (float)samplesPerPixel);
           }
         }
-      //}
+      }
     }
   }
 }
@@ -826,8 +829,8 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   if (SHOW_TEXTURE) {
     intensity = 1;
   }
-  framebuffer[index] = intensity * frag.color;
-  //framebuffer[index] = frag.color;
+  framebuffer[index] = intensity * frag.color / frag.numSamples;
+  framebuffer[index] = frag.color / frag.numSamples;
 }
 
 /**
