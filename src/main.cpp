@@ -14,6 +14,15 @@
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
 
+
+static int displaymode = 0;
+static bool perspectivecorrect = true;
+static bool spec = true;
+static bool antialias = false;
+static bool supersample = false;
+static bool culling = true;
+static bool testingmode = false;
+
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
@@ -103,8 +112,14 @@ void runCuda() {
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
     dptr = NULL;
 
-	glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
-		scale * ((float)width / (float)height),
+    if (!supersample)
+    {
+        cwidth = width;
+        cheight = height;
+    }
+
+	glm::mat4 P = glm::frustum<float>(-scale * ((float)cwidth) / ((float)cheight),
+		scale * ((float)cwidth / (float)cheight),
 		-scale, scale, 1.0, 1000.0);
 
 	glm::mat4 V = glm::mat4(1.0f);
@@ -119,7 +134,7 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
-	rasterize(dptr, MVP, MV, MV_normal);
+    rasterize(dptr, MVP, MV, MV_normal, displaymode, perspectivecorrect, spec, antialias, supersample, culling, testingmode);
     cudaGLUnmapBufferObject(pbo);
 
     frame++;
@@ -137,8 +152,6 @@ bool init(const tinygltf::Scene & scene) {
         return false;
     }
 
-    width = 800;
-    height = 800;
     window = glfwCreateWindow(width, height, "CIS 565 Pathtracer", NULL, NULL);
     if (!window) {
         glfwTerminate();
@@ -213,7 +226,13 @@ void initCuda() {
     // Use device with highest Gflops/s
     cudaGLSetGLDevice(0);
 
-    rasterizeInit(width, height);
+    if (!supersample)
+    {
+        cwidth = width;
+        cheight = height;
+    }
+
+    rasterizeInit(cwidth, cheight, width, height);
 
     // Clean up on program exit
     atexit(cleanupCuda);
@@ -323,11 +342,37 @@ void errorCallback(int error, const char *description) {
     fputs(description, stderr);
 }
 
-void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, GL_TRUE);
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (action == GLFW_REPEAT || action == GLFW_PRESS) {
+        if (key == GLFW_KEY_ESCAPE){
+            glfwSetWindowShouldClose(window, GL_TRUE);
+        }
+        else if (key == GLFW_KEY_S){
+            spec = !spec;
+            printf("\nspec = %d", spec);
+        }
+        else if (key == GLFW_KEY_W){
+            displaymode = ++displaymode > 2 ? 0 : displaymode;
+        }
+        else if (key == GLFW_KEY_P){
+            perspectivecorrect = !perspectivecorrect;
+            printf("\nperspective correct = %d", perspectivecorrect);
+        }
+        else if (key == GLFW_KEY_A){
+            antialias = !antialias;
+            printf("\nanti aliasing = %d", antialias);
+        }
+        else if (key == GLFW_KEY_C){
+            culling = !culling;
+            printf("\nculling = %d", culling);
+        }
+        else if (key == GLFW_KEY_T){
+            testingmode = !testingmode;
+            printf("\ntesting mode = %d", testingmode);
+        }
     }
 }
+
 
 //----------------------------
 //----- util -----------------
@@ -397,3 +442,4 @@ void mouseWheelCallback(GLFWwindow* window, double xoffset, double yoffset)
 	const double s = 1.0;	// sensitivity
 	z_trans += (float)(s * yoffset);
 }
+

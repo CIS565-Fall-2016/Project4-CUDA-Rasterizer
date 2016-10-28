@@ -49,6 +49,9 @@ GLFWwindow *window;
 
 int width = 800;
 int height = 800;
+int cwidth = 1600;
+int cheight = 1600;
+
 
 //-------------------------------
 //-------------MAIN--------------
