@@ -24,7 +24,8 @@
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
 #define getIndex(x, y, width) ((x) + (y) * (width))
-#define samplesPerPixel 3
+#define samplesPerPixel 16
+#define ambientLight 0.1
 
 
 #define DEBUG 1
@@ -725,6 +726,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
     tri[i] = glm::vec3(primitive.v[i].screenPos);
   }
 
+  thrust::uniform_real_distribution<float> u01(0, 1);
   AABB aabb = getAABBForTriangle(tri);
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
@@ -733,7 +735,8 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
       range(offset, 0, samplesPerPixel) {
         int index = samplesPerPixel * getIndex(width - x, height - y, width) + offset;
-        glm::vec2 screenPos = glm::vec2(x, y);
+        thrust::default_random_engine seed(index);
+        glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
         glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
@@ -755,7 +758,8 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
     range(x, aabb.min.x, aabb.max.x) {
       range(offset, 0, samplesPerPixel) {
         int index = samplesPerPixel *  getIndex(width - x, height - y, width) + offset;
-        glm::vec2 screenPos = glm::vec2(x, y);
+        thrust::default_random_engine seed(index);
+        glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
         glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
@@ -818,15 +822,9 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
     glm::vec3 L = glm::normalize(glm::vec3(0, -1, -1));//lightPos - frag.viewPos);
     glm::vec3 V = glm::normalize(-frag.viewPos);
     glm::vec3 H = glm::normalize(L + V);
-    float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2);
-    if (SHOW_TEXTURE) {
-      intensity = 1;
-    }
+    float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2) + ambientLight;
     int id = sampleId;
-    //  frag.color.r,
-    //  frag.color.g,
-    //  frag.color.b);
-    framebuffer[index] = intensity * frag.color / (float)samplesPerPixel;
+    framebuffer[index] += intensity * frag.color / (float)samplesPerPixel;
   }
 }
 
@@ -885,7 +883,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   
   //_initDepth << <blockSize, sampleBlockSize2d >> >(numSamples, dev_depth);
   cudaMemset(dev_depth, 0xff, samplesPerPixel * width * height * sizeof(dev_depth[0]));
-  cudaMemset(dev_framebuffer, 0, width * height * sizeof(Fragment));
+  cudaMemset(dev_framebuffer, 0, width * height * sizeof(dev_framebuffer[0]));
   
   // TODO: rasterize
   dim3 blockSize = totalNumPrimitives / numThreadsPerBlock.x + 1;
