@@ -703,7 +703,25 @@ Fragment* fragments){
 		}
 	}
 }
+__device__
+void devRasterizePoints(glm::vec3& pos, glm::vec3& pos2, glm::vec3 & color,
+int width, int height,
+Fragment* fragments,int stepsize){
+	glm::vec3 p;
+	int index;
+	glm::vec3 d = glm::abs(pos - pos2);
+	if (d.x>0 && d.y>0) {
 
+		int len = glm::max(d.x, d.y);
+
+		for (float i = 0; i <= len; i = i + stepsize) {
+
+			p = interpoline(pos, pos2, i / len);
+			index = (int)(p.x) + (int)(p.y) * width;
+			fragments[index].color = color;
+		}
+	}
+}
 
 __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments, int randomnum){
 	//output: a list of fragments with interpolated attributes
@@ -772,33 +790,42 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		devRasterizeLine(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments);
 		devRasterizeLine(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments);
 #else
-		// create a minstd_rand object to act as our source of randomness
-		thrust::minstd_rand rng;
-		// create a uniform_real_distribution to produce floats from [-7,13)
-		thrust::uniform_real_distribution<float> dist(0, 1);
+		//VertexOut & vertex1 = curPrim.v[1]; 
+		thrust::minstd_rand rng; 
+		thrust::uniform_real_distribution<float> dist(0, 10);
 		rng.discard(randomnum);
 
-		//int xx = vertex0.pos.x + (int)dist(rng);
-		//printf("%f \n",  dist(rng));
-		int xx = vertex0.pos.x;
-		int yy = vertex0.pos.y ;
-		if (xx > 0 && xx<width &&yy>0 && yy < height){
-			int ppid = xx + yy*width;
-			glm::vec3 color = vertex0.col;
-			color += curPrim.v[0].eyeNor;
-			color = glm::normalize(color);
-			fragments[ppid].color = color;
-		}
-		xx = vertex0.pos.x + 2*glm::cos((float)randomnum*0.01f);
-		
-		yy = vertex0.pos.y ;
-		if (xx > 0 && xx<width &&yy>0 && yy < height){
-			int ppid = xx + yy*width;
-			glm::vec3 color = vertex0.col;
-			color += curPrim.v[0].eyeNor;
-			color = glm::normalize(color);
-			fragments[ppid].color = glm::vec3(1.0f, 0.5f, 0.5f);
-		}
+		////int xx = vertex0.pos.x + (int)dist(rng);
+		////printf("%f \n",  dist(rng));
+		//int xx = vertex0.pos.x;
+		//int yy = vertex0.pos.y ;
+		//if (xx > 0 && xx<width &&yy>0 && yy < height){
+		//	int ppid = xx + yy*width;
+		//	glm::vec3 color = vertex0.col;
+		//	color += curPrim.v[0].eyeNor;
+		//	color = glm::normalize(color);
+		//	fragments[ppid].color = color;
+		//}
+
+		//xx = vertex1.pos.x;
+		//yy = vertex1.pos.y;
+		//if (xx > 0 && xx<width &&yy>0 && yy < height){
+		//	int ppid = xx + yy*width;
+		//	glm::vec3 color = vertex1.col;
+		//	color += curPrim.v[0].eyeNor;
+		//	color = glm::normalize(color);
+		//	fragments[ppid].color = color;
+		//}
+		VertexOut & vertex1 = curPrim.v[1];
+		VertexOut & vertex2 = curPrim.v[2];
+		glm::vec3 color = vertex0.col;
+		color += curPrim.v[0].eyeNor;
+		color = glm::normalize(color);
+		//int stepsize = (int)glm::cos((float)randomnum);
+		int stepsize = 20;
+		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, stepsize);
+		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, stepsize);
+		devRasterizePoints(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments, stepsize);
 #endif
 		//}
 	}

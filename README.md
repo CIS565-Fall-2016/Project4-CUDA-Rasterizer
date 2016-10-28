@@ -25,9 +25,9 @@ Cow with Lines | VC with Lines
 :-------------------------:|:-------------------------: 
 ![](imgs/cow2.gif) | ![](imgs/VC2.gif)
 
-Cow with Points | Duck with Points
+Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
-![](imgs/cow3.gif) | ![](imgs/duck3.gif)
+![](imgs/duck3.gif) | ![](imgs/duck4.gif)
 
 #PS: looking for models: just we & just tank
 
