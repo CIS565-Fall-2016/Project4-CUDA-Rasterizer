@@ -777,6 +777,7 @@ __global__ void _rasterize(
 									barycentric.x * prim.v[0].texcoord0 / prim.v[0].eyePos.z +
 									barycentric.y * prim.v[1].texcoord0 / prim.v[1].eyePos.z +
 									barycentric.z * prim.v[2].texcoord0 / prim.v[2].eyePos.z) * perspectiveDepth;
+								//frag.texcoord0 = glm::mat3x2(prim.v[0].texcoord0, prim.v[1].texcoord0, prim.v[2].texcoord0)*barycentric;
 								frag.texHeight = prim.v[0].texHeight;
 								frag.texWidth = prim.v[0].texWidth;
 								frag.dev_diffuseTex = prim.v[0].dev_diffuseTex;
