@@ -44,6 +44,10 @@ Checkerboard with perspective correction | Checkerboard without perspective corr
 :-------------------------:|:-------------------------: 
 ![](imgs/checkerboard.gif) | ![](imgs/checkerboard2.gif)
 
+Checkerboard with bilinear filtering | Checkerboard without bilinear filtering
+:-------------------------:|:-------------------------: 
+![](imgs/checkwithbin.JPG) | ![](imgs/checkwithnobin.JPG)
+
 
 
 Cow | Di|Engine | Buggy
