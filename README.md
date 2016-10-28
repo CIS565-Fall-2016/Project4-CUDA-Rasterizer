@@ -22,7 +22,7 @@ In this project, I have implemented the following features/pipeline stages:
 * Fragment shading. Using Blinn-Phong with ambient, diffuse and specular light effects. (`render` in `rasterize.cu`)
 * A depth buffer to store and depth test fragments.
 * Fragment-to-depth-buffer writing (**with** atomics for race avoidance).
-* Toon Shading by Post processing the fragment buffer divided into "tiles".
+* Toon Shading by Post processing the fragment buffer divided into "tiles" and using Sobel Filter.
 * Backface culling, optimized using thrust's stream compaction.
 * UV texture mapping with bilinear texture filtering and perspective correct texture coordinates.
 * Support for rasterizing additional primitives:
