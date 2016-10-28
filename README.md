@@ -38,8 +38,9 @@ If we naively interpolate the texture coordinates by using the barycentric weigh
 <img src="renders/perspective_correct.PNG" width="400" height="400"/>
 #### Bilinear Interpolation
 Sometimes sampling the textures leaves us with rough-edged textures (left). As a result, we sample adjacent textures and interpolate the texture color (right). As a result, we introduce a bit of blurriness and take a hit in performance but remove jarring edges.
+
 <img src="renders/texture_checker.PNG" width="400" height="400"/>
-<img src="renders/bilinear.PNG" width="400" height="400"/>
+<img src="renders/bilinear_checker.PNG" width="400" height="400"/>
 
 
 ### Backface Culling
