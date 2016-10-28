@@ -206,7 +206,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		glm::vec3 eyePos = fragmentBuffer[index].eyePos;
 		glm::vec3 eyeNor = fragmentBuffer[index].eyeNor;
 
-		glm::vec3 h = glm::normalize(lightDir + glm::vec3(0.f, 0.f, 1.f));
+		glm::vec3 h = glm::normalize(lightDir - eyePos);
 		float costhetah = glm::max(0.f, glm::dot(h, eyeNor));
 		float costheta = glm::max(0.f, glm::dot(lightDir, eyeNor));
 
