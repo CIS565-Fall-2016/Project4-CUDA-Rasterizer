@@ -924,7 +924,7 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
             }
             else
             {
-                
+
                 //printf("\nHELLO WE ARE HERE!");
                 if (mode == 0)  // polygons
                 {
@@ -935,13 +935,13 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                     if (tmp_depth < depth)
                     {
                         glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
-                                          dev_primitives[i].v[1].eyeNor,
-                                          dev_primitives[i].v[2].eyeNor };
+                            dev_primitives[i].v[1].eyeNor,
+                            dev_primitives[i].v[2].eyeNor };
 
 
                         glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
-                                          dev_primitives[i].v[1].eyePos,
-                                          dev_primitives[i].v[2].eyePos };
+                            dev_primitives[i].v[1].eyePos,
+                            dev_primitives[i].v[2].eyePos };
 
 
                         glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
@@ -960,21 +960,21 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                         // COLOR TEST --------------------------------------------
                         if (dev_primitives[0].v[0].dev_diffuseTex == NULL)
                         {
-                                dev_fragBuffer[index].color = glm::vec3(0.8, 0.8, 0.8);
-                                dev_fragBuffer[index].depth = depth;
-                                continue;
+                            dev_fragBuffer[index].color = glm::vec3(0.8, 0.8, 0.8);
+                            dev_fragBuffer[index].depth = depth;
+                            continue;
                         }
                         // COLOR TEST --------------------------------------------
-                        
+
                         float dt = glm::dot(glm::normalize(ee - pp), nn);
                         //dev_fragBuffer[index].color *= dt;
 
 
                         // texture test
-                        
-                            glm::vec3 uvs[] = { glm::vec3(dev_primitives[i].v[0].texcoord0, 0.0f),
-                                                glm::vec3(dev_primitives[i].v[1].texcoord0, 0.0f),
-                                                glm::vec3(dev_primitives[i].v[2].texcoord0, 0.0f)};
+
+                        glm::vec3 uvs[] = { glm::vec3(dev_primitives[i].v[0].texcoord0, 0.0f),
+                            glm::vec3(dev_primitives[i].v[1].texcoord0, 0.0f),
+                            glm::vec3(dev_primitives[i].v[2].texcoord0, 0.0f) };
 
                         glm::vec3 uv(0.0f);
                         if (perspectivecorrect)
@@ -1001,24 +1001,24 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                         {
                             uv = (uvs[0] * bc.x + uvs[1] * bc.y + uvs[2] * bc.z);
                         }
-                        
+
                         /*
                         if (perspectivecorrect)
                         {
-                            float zz = 1.0f / (uvs[0].z * bc.x + uvs[1].z * bc.y + uvs[2].z * bc.z);
-                            uv *= zz;
+                        float zz = 1.0f / (uvs[0].z * bc.x + uvs[1].z * bc.y + uvs[2].z * bc.z);
+                        uv *= zz;
                         }
                         */
                         uv *= primitive.txHeight;
-                        
+
                         int cix = ((int)uv.y * primitive.txHeight + (int)uv.x) * 3;
                         cix = cix % (primitive.txHeight * primitive.txWidth * 3);
 
 
                         //primitive.dev_verticesOut[primitive.dev_indices[i]].texcoord0;
                         unsigned char tx1 = dev_primitives[0].v[0].dev_diffuseTex[cix];
-                        unsigned char tx2 = dev_primitives[0].v[0].dev_diffuseTex[cix+1];
-                        unsigned char tx3 = dev_primitives[0].v[0].dev_diffuseTex[cix+2];
+                        unsigned char tx2 = dev_primitives[0].v[0].dev_diffuseTex[cix + 1];
+                        unsigned char tx3 = dev_primitives[0].v[0].dev_diffuseTex[cix + 2];
 
                         unsigned int red = tx1;
                         unsigned int green = tx2;
@@ -1030,73 +1030,80 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                         dev_fragBuffer[index].depth = depth;
                     }
                 }
-                else if (mode == 1 && (bc.x <= 0.01 || bc.y <= 0.01 || bc.z <= 0.01))
+                else if (mode == 1)
                 {
-                    // get the position from barycenter
-                    glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
-
-                    float tmp_depth = pp.z;
-                    if (tmp_depth < depth)
+                    float eps = 0.04f;
+                    if (mode == 1 && (bc.x <= eps || bc.y <= eps || bc.z <= eps))
                     {
-                        glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
-                                          dev_primitives[i].v[0].eyeNor,
-                                          dev_primitives[i].v[0].eyeNor };
+                        // get the position from barycenter
+                        glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
+
+                        float tmp_depth = pp.z;
+                        if (tmp_depth < depth)
+                        {
+                            glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
+                                dev_primitives[i].v[0].eyeNor,
+                                dev_primitives[i].v[0].eyeNor };
 
 
-                        glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
-                                          dev_primitives[i].v[0].eyePos,
-                                          dev_primitives[i].v[0].eyePos };
+                            glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
+                                dev_primitives[i].v[0].eyePos,
+                                dev_primitives[i].v[0].eyePos };
 
-                        glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
-                        nn = glm::normalize(nn);
+                            glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
+                            nn = glm::normalize(nn);
 
-                        glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
+                            glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
 
-                        depth = tmp_depth;
-                        dev_fragBuffer[index].color = glm::vec3(1.0, 0.0, 0.0);
-                        dev_fragBuffer[index].eyeNor = nn;
-                        dev_fragBuffer[index].eyePos = ee;
+                            depth = tmp_depth;
+                            dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
+                            dev_fragBuffer[index].eyeNor = nn;
+                            dev_fragBuffer[index].eyePos = ee;
 
-                        float dt = glm::dot(glm::normalize(ee - pp), nn);
-                        dev_fragBuffer[index].color *= dt;
-                        dev_fragBuffer[index].depth = depth;
-
+                            float dt = glm::dot(glm::normalize(ee - pp), nn);
+                            dev_fragBuffer[index].color *= dt;
+                            dev_fragBuffer[index].depth = depth;
+                        }
                     }
                 }
-                else if ((bc.x <= 0.02 && bc.y <= 0.02) ||
-                         (bc.x <= 0.02 && bc.z <= 0.02) ||
-                         (bc.y <= 0.02 && bc.z <= 0.02))
+                else
                 {
-                    // get the position from barycenter
-                    glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
-
-                    float tmp_depth = pp.z;
-                    if (tmp_depth < depth)
+                    float eps = 0.04f;
+                    if ((bc.x <= eps && bc.y <= eps) ||
+                        (bc.x <= eps && bc.z <= eps) ||
+                        (bc.y <= eps && bc.z <= eps))
                     {
-                        glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
-                                          dev_primitives[i].v[0].eyeNor,
-                                          dev_primitives[i].v[0].eyeNor };
+                        // get the position from barycenter
+                        glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
+
+                        float tmp_depth = pp.z;
+                        if (tmp_depth < depth)
+                        {
+                            glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
+                                dev_primitives[i].v[0].eyeNor,
+                                dev_primitives[i].v[0].eyeNor };
 
 
-                        glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
-                                          dev_primitives[i].v[0].eyePos,
-                                          dev_primitives[i].v[0].eyePos };
+                            glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
+                                dev_primitives[i].v[0].eyePos,
+                                dev_primitives[i].v[0].eyePos };
 
-                        glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
-                        nn = glm::normalize(nn);
+                            glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
+                            nn = glm::normalize(nn);
 
-                        glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
+                            glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
 
 
-                        depth = tmp_depth;
-                        dev_fragBuffer[index].color = glm::vec3(1.0, 0.0, 0.0);
-                        dev_fragBuffer[index].eyeNor = nn;
-                        dev_fragBuffer[index].eyePos = ee;
+                            depth = tmp_depth;
+                            dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
+                            dev_fragBuffer[index].eyeNor = nn;
+                            dev_fragBuffer[index].eyePos = ee;
 
-                        float dt = glm::dot(glm::normalize(ee - pp), nn);
-                        dev_fragBuffer[index].color *= dt;
-                        dev_fragBuffer[index].depth = depth;
+                            float dt = glm::dot(glm::normalize(ee - pp), nn);
+                            dev_fragBuffer[index].color *= dt;
+                            dev_fragBuffer[index].depth = depth;
 
+                        }
                     }
                 }
             }
