@@ -44,7 +44,7 @@ Sometimes sampling the textures leaves us with rough-edged textures (left). As a
 
 
 ### Backface Culling
-Backface culling involves a preprocessing step that determines whether a triangle is visible in the perspective of the viewer. This is determined by the chirality of the triangle primitives. If they are counter-clockwise when a front-facing triangle should be clockwise, then we can ignore that triangle. We also perform a stream compaction to ensure that all primitives that are culled are not accounted for in our kernel launches. Furthermore, depending on the perspective of the camera, more or less polygons will be culled. Below demonstrates the percentage of culled primitives from a side-view perspective (default perspective when launched). 
+Backface culling involves a preprocessing step that determines whether a triangle is visible in the perspective of the viewer. This is determined by the chirality of the triangle primitives. If they are counter-clockwise when a front-facing triangle should be clockwise, then we can ignore that triangle. We also perform a stream compaction to ensure that all primitives that are culled are not accounted for in our kernel launches. Furthermore, depending on the perspective of the camera, more or less polygons will be culled. Below demonstrates the percentage of culled primitives from a side-view perspective (default perspective when launched). It was hard to determine the exact performance impact in terms of frames per second due to the strong processing capabilities of a 1070 card (everything was maxing out at 60 frames!). My hypothesis would be that the impact would be a linear improvement with respect to the culled primitives.
 
 <img src="renders/Capture.PNG" />
 ### Non-Photorealistic Rendering (NPR)
@@ -52,6 +52,8 @@ Before the final step in calculating the lighting of each fragment, we manipulat
 
 <img src="renders/oilpainting2.png" width="400" height="300"/>
 <img src="http://cdn.pcwallart.com/images/maple-leaf-wallpaper-3.jpg" width="400" height="200"/>
+
+### Performance Analysis
 
 
 ### Credits
