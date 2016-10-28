@@ -10,13 +10,15 @@
 
 #include "rasterize.h"
 #include "common.h"
-
+#include <thrust/random/linear_congruential_engine.h>
+#include <thrust/random/uniform_real_distribution.h>
 #define USETEXTURE 0
 #define USELIGHT 0 && USETEXTURE
 #define USEBILINFILTER 0 && USETEXTURE
 #define USEPERSPECTIVECORRECTION 0 && USETEXTURE
 #define USETILE 0
-#define USELINES 1 && 1-USETEXTURE
+#define USELINES 0  && 1-USETEXTURE
+#define USEPOINTS 1 && 1-USETEXTURE
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -701,10 +703,12 @@ Fragment* fragments){
 		}
 	}
 }
-__global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments){
+
+
+__global__ void kernRasterize(int n, Primitive * primitives, int* depths, int width, int height, Fragment* fragments, int randomnum){
 	//output: a list of fragments with interpolated attributes
 	int index = (blockIdx.x*blockDim.x) + threadIdx.x;
-	if (index < n ){ //   (n too small) this is the crazy bug!!
+	if (index < n){ //   (n too small) this is the crazy bug!!
 		Primitive & curPrim = primitives[index];
 		VertexOut & vertex0 = curPrim.v[0];
 		//if (curPrim.primitiveType == TINYGLTF_MODE_TRIANGLES){
@@ -712,11 +716,11 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		AABB aabb = getAABBForTriangle(triangle);
 		//brute force baricentric 
 		if (aabb.min.x<0 || aabb.max.x>width - 1 || aabb.min.y<0 || aabb.max.y>height - 1) return;
-		int xmin = getMax(0,aabb.min.x);
-		int xmax = getMin(aabb.max.x, width-1);
-		int ymin = getMax(0,aabb.min.y);
-		int ymax = getMin(aabb.max.y,height-1);
-		
+		int xmin = getMax(0, aabb.min.x);
+		int xmax = getMin(aabb.max.x, width - 1);
+		int ymin = getMax(0, aabb.min.y);
+		int ymax = getMin(aabb.max.y, height - 1);
+
 #if (USELINES==0)
 		int fixedDepth;
 		for (int x = xmin; x <= xmax; x++){
@@ -726,11 +730,11 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 				glm::vec3 barcen = calculateBarycentricCoordinate(triangle, glm::vec2(x, y)); 
 				if (isBarycentricCoordInBounds(barcen)){
 					float zval = getZAtCoordinate(barcen, triangle);
-					 
+
 					fixedDepth = -(int)INT_MAX*zval;
 					atomicMin(&depths[pid], fixedDepth); 
 					if (depths[pid] == fixedDepth ){
-						
+
 						Fragment & curFrag = fragments[pid];
 						curFrag.eyeNor = barcen.x*curPrim.v[0].eyeNor + barcen.y*curPrim.v[1].eyeNor + barcen.z*curPrim.v[2].eyeNor;
 						curFrag.eyePos = barcen.x*curPrim.v[0].eyePos + barcen.y*curPrim.v[1].eyePos + barcen.z*curPrim.v[2].eyePos;
@@ -758,7 +762,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 				}
 			}
 		}
-#else
+#elif  USELINES==1
 		VertexOut & vertex1 = curPrim.v[1];
 		VertexOut & vertex2 = curPrim.v[2];
 		glm::vec3 color = vertex0.col;
@@ -767,7 +771,34 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		devRasterizeLine(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments);
 		devRasterizeLine(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments);
 		devRasterizeLine(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments);
- 
+#else
+		// create a minstd_rand object to act as our source of randomness
+		thrust::minstd_rand rng;
+		// create a uniform_real_distribution to produce floats from [-7,13)
+		thrust::uniform_real_distribution<float> dist(0, 1);
+		rng.discard(randomnum);
+
+		//int xx = vertex0.pos.x + (int)dist(rng);
+		//printf("%f \n",  dist(rng));
+		int xx = vertex0.pos.x;
+		int yy = vertex0.pos.y ;
+		if (xx > 0 && xx<width &&yy>0 && yy < height){
+			int ppid = xx + yy*width;
+			glm::vec3 color = vertex0.col;
+			color += curPrim.v[0].eyeNor;
+			color = glm::normalize(color);
+			fragments[ppid].color = color;
+		}
+		xx = vertex0.pos.x + 2*glm::cos((float)randomnum*0.01f);
+		
+		yy = vertex0.pos.y ;
+		if (xx > 0 && xx<width &&yy>0 && yy < height){
+			int ppid = xx + yy*width;
+			glm::vec3 color = vertex0.col;
+			color += curPrim.v[0].eyeNor;
+			color = glm::normalize(color);
+			fragments[ppid].color = glm::vec3(1.0f, 0.5f, 0.5f);
+		}
 #endif
 		//}
 	}
@@ -800,8 +831,9 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 //
 //
 //}
-
+static int iter = 0;
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+	iter++;
 	int sideLength2d = 8;
 	dim3 blockSize2d(sideLength2d, sideLength2d);
 	dim3 blockCount2d((width - 1) / blockSize2d.x + 1,
@@ -847,7 +879,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 	// TODO: rasterize 
 	dim3 numBlocksPrims((totalNumPrimitives + blockSize - 1) / blockSize);
-	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer);
+	int randomnum = std::rand();
+	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer, iter);
 	checkCUDAError("rasterize wrong");
 
 #if USETEXTURE==1
