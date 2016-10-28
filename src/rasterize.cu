@@ -42,12 +42,13 @@ namespace {
 		// The attributes listed below might be useful, 
 		// but always feel free to modify on your own
 
-		 glm::vec3 eyePos;	// eye space position used for shading
-		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
+		glm::vec3 eyePos;	// eye space position used for shading
+		glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
 		// glm::vec3 col;
-		 glm::vec2 texcoord0;
-		 TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
+		glm::vec2 texcoord0;
+		TextureData* dev_diffuseTex = NULL;
+		int texWidth, texHeight;
+		int component;
 		// ...
 	};
 
@@ -101,6 +102,7 @@ namespace {
 		VertexOut* dev_verticesOut;
 
 		// TODO: add more attributes when needed
+		int component;
 	};
 
 }
@@ -537,6 +539,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					TextureData* dev_diffuseTex = NULL;
 					int diffuseTexWidth = 0;
 					int diffuseTexHeight = 0;
+					int component = 0;
+
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -554,8 +558,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 									
 									diffuseTexWidth = image.width;
 									diffuseTexHeight = image.height;
+									component = image.component;
 
 									checkCUDAError("Set Texture Image data");
+									printf("Texture data pt: %d\n", dev_diffuseTex);
 								}
 							}
 						}
@@ -597,7 +603,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						diffuseTexWidth,
 						diffuseTexHeight,
 
-						dev_vertexOut	//VertexOut
+						dev_vertexOut,	//VertexOut
+						component
 					});
 
 					totalNumPrimitives += numPrimitives;
@@ -673,6 +680,16 @@ void _vertexTransformAndAssembly(
 		glm::vec4 eyePos = MV * glm::vec4(primitive.dev_position[vid], 1.0f);
 		vout->eyePos = glm::vec3(eyePos / eyePos.w);
 		vout->eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
+
+		if (primitive.dev_diffuseTex != NULL)
+		{
+			//printf("Primitive tex not null");
+			vout->dev_diffuseTex = primitive.dev_diffuseTex;
+			vout->texcoord0 = primitive.dev_texcoord0[vid];
+			vout->texWidth = primitive.diffuseTexWidth;
+			vout->texHeight = primitive.diffuseTexHeight;
+			vout->component = primitive.component;
+		}
 	}
 }
 
@@ -756,7 +773,34 @@ __global__ void _rasterization(int numIndices, Primitive *dev_primitive, int wid
 							if (depth < fragDepth[idx])
 							{
 								// update frag
-								frag[idx].color = glm::vec3(1.0f, 0, 0);
+								if (triangle[0].dev_diffuseTex == NULL || triangle[1].dev_diffuseTex == NULL || triangle[2].dev_diffuseTex == NULL)
+								{
+									//printf("no texture\n");
+									// test texcoord;
+									glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * barycentricCoord;
+									frag[idx].color = glm::vec3(texcoord.x, texcoord.y, 0);
+								}
+								else
+								{
+									// texture
+									//printf("texture\n");
+									glm::vec2 texcoord = glm::mat3x2(triangle[0].texcoord0, triangle[1].texcoord0, triangle[2].texcoord0) * barycentricCoord;
+									// look at one point's texture.
+									int texx = floor(0.5f + texcoord.x * (triangle[0].texWidth - 1));
+									int texy = floor(0.5f + texcoord.y * (triangle[0].texHeight - 1));
+									int component = triangle[0].component;
+
+									int texIdx = texy * triangle[0].texWidth + texx;
+									texIdx *= component;
+
+									glm::vec3 color = glm::vec3(triangle[0].dev_diffuseTex[texIdx], triangle[0].dev_diffuseTex[texIdx + 1], triangle[0].dev_diffuseTex[texIdx + 2]) / 255.0f;
+									
+									// test coordinate
+									//frag[idx].color = glm::vec3(texcoord.x, texcoord.y, 0);
+
+									frag[idx].color = color;
+
+								}
 								frag[idx].eyePos = glm::mat3(triangle[0].eyePos, triangle[1].eyePos, triangle[2].eyePos) * barycentricCoord;
 								frag[idx].eyeNor = glm::mat3(triangle[0].eyeNor, triangle[1].eyeNor, triangle[2].eyeNor) * barycentricCoord;
 								fragDepth[idx] = depth;
