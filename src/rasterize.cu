@@ -23,7 +23,7 @@
 #define IDy ((blockIdx.y * blockDim.y) + threadIdx.y)
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
-#define getIndex(x, y, width) (x + y * width)
+#define getIndex(x, y, width) ((x) + (y) * (width))
 #define samplesPerPixel 1
 
 
@@ -32,7 +32,11 @@
 #define debug0(...) if (DEBUG == 1 && id == 0) { printf (__VA_ARGS__); }
 #define debug1(...) if (DEBUG == 1 && id == 1) { printf (__VA_ARGS__); }
 #define debugDuck(...) if (DEBUG == 1 && id == 330033) { printf (__VA_ARGS__); }
+#define debugMinMax(...) if (DEBUG == 1 && id == 320) { printf (__VA_ARGS__); }
+#define debugDepthsId 369228
+#define debugDepths(...) if (DEBUG == 1 && id == debugDepthsId) { printf (__VA_ARGS__); }
 //#define debugBoard(...) if (DEBUG == 1 && id == ) { printf (__VA_ARGS__); }
+
 #define range(i, start, stop) for (i = start; i < stop; i++)
 #define SHOW_TEXTURE 0
 #define debug(...) if (DEBUG == 1) { printf (__VA_ARGS__); }
@@ -84,7 +88,7 @@ namespace {
      glm::vec3 viewPos;  // eye space position used for shading
      glm::vec3 viewNorm;
      TextureData* diffuseTex;
-	 float numSamples;
+	 int numSamples;
     // ...
   };
 
@@ -644,6 +648,10 @@ void _vertexTransformAndAssembly(
   glm::vec4 screenDims(width, height, 1, 1);
   vertex.pos = screenDims * (clipPos / clipPos.w + glm::vec4(1, 1, 0, 0)) / 2.0f;
 
+  if (vertex.pos.y > height) {
+    debug("WFT: %d", vertex.pos.y);
+  }
+
   // Assemble all attribute arrays into the primitive array
   vertex.texcoord0 = vertexParts.texcoord0[IDx];
 }
@@ -733,11 +741,12 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   }
 
   AABB aabb = getAABBForTriangle(tri);
+
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
 
       // zero out values of fragment struct
-      int fragmentId = getIndex(x, y, width);
+      int fragmentId = getIndex(x, height - y, width);
 
       range(offset, 0, samplesPerPixel) {
         int sampleId = samplesPerPixel * fragmentId + offset;
@@ -762,7 +771,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
       range(offset, 0, samplesPerPixel) {
-        int fragmentId = getIndex(x, y, width);
+        int fragmentId = getIndex(x, height - y, width);
         int sampleId = samplesPerPixel * fragmentId + offset;
         glm::vec2 screenPos = glm::vec2(x, y);
 
@@ -773,9 +782,11 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
           // if the sample is not occluded
           if ((unsigned int)depth == depths[sampleId]) {
+            id = fragmentId;
+            //debugDepths("depth=%u\n", depth);
             Fragment &fragment = fragments[fragmentId];
 
-			fragment.viewPos += glm::vec3(screenPos, depth);
+            fragment.viewPos += glm::vec3(screenPos, depth);
             //atomicAddVec3(fragment.viewPos, glm::vec3(screenPos, depth) / (float)samplesPerPixel);
 
             // interpolate texcoord and texnorm
@@ -787,7 +798,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
               float weight = barycentricCoord[k];
               Vertex v = primitive.v[k];
 
-			  fragment.viewNorm = weight * v.viewNorm;
+              fragment.viewNorm = weight * v.viewNorm;
               //atomicAddVec3(fragment.viewNorm, weight * v.viewNor / (float)samplesPerPixel);
 
               float texWeight = weight / v.viewPos.z;
@@ -803,11 +814,26 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
             TextureData *tex = primitive.diffuseTex; 
             glm::vec3 color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
 
-			atomicAddVec3(fragment.color, color);
-			atomicAdd(&fragment.numSamples, 1.0f);
-            //atomicAddVec3(fragment.color, color / (float)samplesPerPixel);
+            //atomicAddVec3(fragment.color, color);
+            atomicAdd(&fragment.numSamples, 1);
+            fragment.color = color;
           }
         }
+      }
+    }
+
+    int halfwidth = width / 2;
+    int halfheight = height / 2;
+    int cr = 3;
+    if (halfwidth - cr < x && halfheight + cr > x && halfheight + cr > y && halfheight - cr < y) {
+      int fragmentId = getIndex(x, height - y, width);
+      int sampleId = samplesPerPixel * fragmentId + offset;
+      glm::vec2 screenPos = glm::vec2(x, y);
+      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
+      float depth = getFragmentDepth(barycentricCoord, tri);
+      fragments[fragmentId].color = glm::vec3(1, 0, 0);
+      if (x == halfwidth && y == halfheight) {
+        debug("depth=%y", depth);
       }
     }
   }
@@ -829,8 +855,11 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   if (SHOW_TEXTURE) {
     intensity = 1;
   }
-  framebuffer[index] = intensity * frag.color / frag.numSamples;
-  framebuffer[index] = frag.color / frag.numSamples;
+  //framebuffer[index] = intensity * frag.color / frag.numSamples;
+  //framebuffer[index] = frag.color / frag.numSamples;
+  framebuffer[index] = frag.color / (float)frag.numSamples;
+  int id = index;
+  if (frag.numSamples > 1) debugDepths("numSamples=%d\n", frag.numSamples);
 }
 
 /**
