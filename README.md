@@ -30,7 +30,9 @@ A rasterizer takes a scene described in 3d space and maps it to a 2d space for o
 #### Perspective Correct Transformation
 #### Bilinear Interpolation
 
+
 ### Backface Culling
+
 
 ### Non-Photorealistic Rendering
 
