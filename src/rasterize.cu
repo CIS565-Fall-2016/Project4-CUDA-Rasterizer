@@ -17,15 +17,16 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <thrust/remove.h>
+#include <thrust/execution_policy.h>
+#include <minwindef.h>
 
 //#define RENDER_DEPTH_ONLY
 //#define RENDER_NORMAL_ONLY
 #define BILINEAR_FILTERING
 //#define BACKFACE_CULLING
 //#define NOT_USE_TEXTURE
-#define USE_K_BUFFER
-
-namespace {
+//#define USE_K_BUFFER
 
 	typedef unsigned short VertexIndex;
 	typedef glm::vec3 VertexAttributePosition;
@@ -118,7 +119,6 @@ namespace {
 		float transparency;
 	};
 
-}
 
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
@@ -128,6 +128,7 @@ static int height = 0;
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
+static Primitive* dev_culledPrimitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec4 *dev_framebuffer = NULL;
 static Material *dev_materials = NULL;
@@ -180,14 +181,14 @@ void render(
     if (x < w && y < h) {
 
 #ifdef RENDER_DEPTH_ONLY
-		framebuffer[index] = glm::vec3(fragmentBuffer[index].depth, fragmentBuffer[index].depth, fragmentBuffer[index].depth);
+		framebuffer[index] = glm::vec4(fragmentBuffer[index].depth, fragmentBuffer[index].depth, fragmentBuffer[index].depth, 1.0f);
 #elif defined(RENDER_NORMAL_ONLY)
-		framebuffer[index] = glm::abs(fragmentBuffer[index].eyeNor);
+		framebuffer[index] = glm::vec4(glm::abs(fragmentBuffer[index].eyeNor), 1.f);
 #else // Render with colors
 
 		int materialId = fragmentBuffer[index].materialId;
 		if (materialId != -1) {
-			glm::vec3 lightDirection = glm::vec3(-3.0f, 5.0f, 5.0f) - fragmentBuffer[index].eyePos;
+			glm::vec3 lightDirection = glm::normalize(glm::vec3(-3.0f, 5.0f, 5.0f) - fragmentBuffer[index].eyePos);
 
 		// Blinn-phong from Wikipedia: https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
     	float lambertian = glm::clamp(
@@ -204,26 +205,21 @@ void render(
 			glm::vec4 diffuse =
 #ifdef NOT_USE_TEXTURE			
 			materials[materialId].diffuse;
+			if (diffuse ==  glm::vec4(0, 0, 0, 1)) {
+				// Diffuse is black, adjust it brighter
+				diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+			}
 #else
 			fragmentBuffer[index].color;
 #endif
 			framebuffer[index] = materials[materialId].ambient * diffuse + lambertian * diffuse + specular * materials[materialId].specular;
-
 
 		} else {
 			framebuffer[index] = fragmentBuffer[index].color;
 		}
 
 #ifdef USE_K_BUFFER						
-		framebuffer[index].a *= (1.0f - glm::clamp((framebuffer[index].r + framebuffer[index].g + framebuffer[index].b) * (1.0f / 3.0f), 0.0f, 1.0f));
-
-		float a = glm::min(1.0f, framebuffer[index].a) * 8.0 + 0.01;
-		float b = -depth[index] * 0.95f + 1.0f;
-
-		float w = glm::clamp(a * a * a * 1e8 * b * b * b, 1e-2, 3e2);
-		glm::vec4 accum = framebuffer[index] * w;
-		float revealaage = framebuffer[index].a;
-
+		framebuffer[index] = glm::vec4(glm::vec3(depthAccum[index]) / glm::max(depthAccum[index].a, 0.00001f), 1.0f ) / 50.0f; // Divide by 50.0f here to tone down the transparency
 
 #endif // USE_K_BUFFER
 
@@ -718,10 +714,12 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 	}
 	
-
+	printf("Total number of primitives: %d\n", totalNumPrimitives);
 	// 3. Malloc for dev_primitives
 	{
 		cudaMalloc(&dev_primitives, totalNumPrimitives * sizeof(Primitive));
+		cudaMalloc(&dev_culledPrimitives, totalNumPrimitives * sizeof(Primitive));
+
 	}
 	
 	// 4. Malloc for dev_materials
@@ -860,6 +858,8 @@ void _rasterize(
 	Primitive* primitives,
 	Fragment* fragmentBuffer,
 	float * depths,
+	glm::vec4 *depthAccum, // k-buffer accumulate
+	float* depthRevealage, // k-buffer revealage
 	int width,
 	int height
 	)
@@ -901,8 +901,14 @@ void _rasterize(
 					float depth = getPerspectiveCorrectZAtCoordinate(screenSpaceBarycentric, tri);
 
 					int index = x + (y * width);
+
+					// Compute fragment values
+#ifdef USE_K_BUFFER
+					{
+#else
 					if (depth < depths[index]) {
 						fatomicMin(&depths[index], depth);
+#endif
 
 						// Interpolate normal
 						glm::vec3 eyeSpaceNormals[3] = {
@@ -940,30 +946,47 @@ void _rasterize(
 						fragmentBuffer[index].eyeNor = perspectiveCorrectNormal;
 
 						// If there is texture data, use it
+						glm::vec4 color;
 						if (primitive.v[0].dev_diffuseTex != nullptr) 
 						{
 							TextureData* texels = primitive.v[0].dev_diffuseTex;
 
 #ifdef BILINEAR_FILTERING
-							fragmentBuffer[index].color = getBilinearFilteredPixelColor(texels, uv, primitive.v[0].texWidth, primitive.v[0].texHeight);
+							color = getBilinearFilteredPixelColor(texels, uv, primitive.v[0].texWidth, primitive.v[0].texHeight);
 #else
 							int texIndex =
 								(int)(uv.s * primitive.v[0].texWidth) +
 								(int)(uv.t * primitive.v[0].texWidth) * primitive.v[0].texHeight;
 
-							fragmentBuffer[index].color = glm::vec3(
-								texels[3 * texIndex + 2] / 255.0f);
+							color = glm::vec4(
 								texels[3 * texIndex] / 255.0f,
 								texels[3 * texIndex + 1] / 255.0f,
+								texels[3 * texIndex + 2] / 255.0f, 1.0f);
+									
 #endif
 						} 
 						else 
 						{
-							fragmentBuffer[index].color = primitive.v[0].color;
+							color = primitive.v[0].color;
 						}
 						fragmentBuffer[index].materialId = primitive.v[0].materialId;
 
+#ifdef USE_K_BUFFER			
+						color.a = 0.1f;
+						color.a *= (1.0f - glm::clamp((color.r + color.g + color.b) * (1.0f / 3.0f), 0.0f, 1.0f));
 
+						float a = glm::min(1.0f, color.a) * 8.0 + 0.01;
+						float b = depth * 0.95f + 1.0f;
+
+						float w = glm::clamp(a * a * a * 1e8 * b * b * b, 1e-2, 3e2);
+						atomicAdd(&depthAccum[index].r, color.r * w);
+						atomicAdd(&depthAccum[index].g, color.g * w);
+						atomicAdd(&depthAccum[index].b, color.b * w);
+						atomicAdd(&depthAccum[index].w, color.w * w);
+						depthRevealage[index] = color.a;
+#endif
+						// Final color
+						fragmentBuffer[index].color = color;
 					}
 				}
 			}
@@ -971,6 +994,19 @@ void _rasterize(
 	}
 }
 
+
+struct shouldBackfaceCull
+{
+	__host__ __device__
+		bool operator()(const Primitive& p)
+	{
+		// Compute primitive face normal
+		glm::vec4 edge1 = p.v[0].pos - p.v[1].pos;
+		glm::vec4 edge2 = p.v[1].pos - p.v[2].pos;
+		glm::vec3 faceNormal = glm::cross(glm::vec3(edge1), glm::vec3(edge2));
+		return glm::dot(faceNormal, -p.v[0].eyePos) < 0.0f;
+	};
+};
 
 /**
  * Perform rasterization.
@@ -1015,6 +1051,17 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
+
+	int culledNumPrimitives = totalNumPrimitives;
+	cudaMemcpy(dev_culledPrimitives, dev_primitives, totalNumPrimitives * sizeof(Primitive), cudaMemcpyDeviceToDevice);
+#ifdef BACKFACE_CULLING
+    {
+		Primitive* dev_primitives_end = thrust::remove_if(thrust::device, dev_culledPrimitives, dev_culledPrimitives + totalNumPrimitives, shouldBackfaceCull());
+		culledNumPrimitives = dev_primitives_end - dev_primitives;
+		if (culledNumPrimitives <= 0) culledNumPrimitives = 1;
+    }
+#endif
+
 	
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	cudaMemset(dev_depthAccum, 0, width * height * sizeof(glm::vec4));
@@ -1023,13 +1070,15 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	
 	// Rasterize
 	{
-		dim3 numThreadsPerBlock(128 < totalNumPrimitives ? 128 : totalNumPrimitives);
-		dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+		dim3 numThreadsPerBlock(128 < culledNumPrimitives ? 128 : culledNumPrimitives);
+		dim3 numBlocksForPrimitives((culledNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 		_rasterize<<<numBlocksForPrimitives, numThreadsPerBlock>>>(
-			totalNumPrimitives, 
-			dev_primitives, 
+			culledNumPrimitives,
+			dev_culledPrimitives,
 			dev_fragmentBuffer,
 			dev_depth, 
+			dev_depthAccum, 
+			dev_depthRevealage,
 			width, 
 			height
 			);
@@ -1076,6 +1125,9 @@ void rasterizeFree() {
 
     cudaFree(dev_primitives);
     dev_primitives = NULL;
+
+	cudaFree(dev_culledPrimitives);
+	dev_culledPrimitives = NULL;
 
 	cudaFree(dev_fragmentBuffer);
 	dev_fragmentBuffer = NULL;

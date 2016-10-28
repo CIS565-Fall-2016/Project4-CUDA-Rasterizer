@@ -14,6 +14,10 @@
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
 
+//#define USE_CENTAUR_MODEL
+#define USE_HEAD_MODEL
+//#define USE_ENGINE_MODEL
+
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
@@ -76,7 +80,12 @@ void mainLoop() {
             seconds = seconds2;
         }
 
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
+		static auto start = std::chrono::system_clock::now();
+		auto now = std::chrono::system_clock::now();
+		float timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+		start = now;
+
+        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS | " + utilityCore::convertIntToString((int)timeElapsed) + " ms";
         glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
@@ -109,7 +118,15 @@ void runCuda() {
 		scale * ((float)width / (float)height),
 		-scale, scale, 1.0, 1000.0);
 
+#ifdef USE_CENTAUR_MODEL
+	glm::mat4 V = glm::translate(glm::vec3(0, -15, -20));
+#elif defined(USE_ENGINE_MODEL)
+	glm::mat4 V = glm::translate(glm::vec3(0, -15, -1000));
+#elif defined(USE_HEAD_MODEL)
 	glm::mat4 V = glm::translate(glm::vec3(0, 0, 0));
+#else
+	glm::mat4 V = glm::mat4(1.0f);
+#endif
 
 	auto now = std::chrono::system_clock::now();
 	float timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
@@ -118,7 +135,10 @@ void runCuda() {
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
 		* glm::rotate(x_angle, glm::vec3(1.0f, 0.0f, 0.0f))
 		* glm::rotate(y_angle + timeElapsed / 1000.0f, glm::vec3(0.0f, 1.0f, 0.0f))
-		* glm::scale(glm::vec3(15, 15, 15));
+#ifdef USE_HEAD_MODEL	
+		* glm::scale(glm::vec3(15, 15, 15))
+#endif
+		;
 
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
