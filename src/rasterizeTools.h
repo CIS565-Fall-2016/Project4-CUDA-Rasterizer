@@ -99,3 +99,8 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
            + barycentricCoord.y * tri[1].z
            + barycentricCoord.z * tri[2].z);
 }
+
+__host__ __device__ static
+glm::vec3 lerp(float val, glm::vec3 x, glm::vec3 y){
+	return (1.f - val) * x + val * y;
+}
