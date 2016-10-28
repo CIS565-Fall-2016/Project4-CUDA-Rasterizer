@@ -45,7 +45,7 @@ Sometimes sampling the textures leaves us with rough-edged textures (left). As a
 
 ### Backface Culling
 Backface culling involves 
-<img src="Capture.PNG" />
+<img src="renders/Capture.PNG" />
 ### Non-Photorealistic Rendering (NPR)
 Before the final step in calculating the lighting of each fragment, we manipulate our fragment buffer by applying a NPR filter over it. In our case, we apply an oil painting effect onto our rasterized image. For each pixel, we search in a radius around it and cache all color intensities (determined by avg RGB value from 0-255). By caching all color intensities, we map them to the sum of all nearby RGB values of each intensity band. We then select the mode intensity and average all RGB values and set that pixel to the averaged RGB value. The parameters INTENSITY controls the blockyness of the filter and the RADIUS tunes the size of the "brush". The current settings for the pictures below are set to a radius of 4 and intensity of 25. We also vandalized the Cesium car a bit to demo the effect a bit better :).
 
@@ -57,3 +57,4 @@ Before the final step in calculating the lighting of each fragment, we manipulat
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
 * [glTF Sample Models](https://github.com/KhronosGroup/glTF/blob/master/sampleModels/README.md)
+* [NPR Oil Painting Effect](http://www.codeproject.com/Articles/471994/OilPaintEffect)
