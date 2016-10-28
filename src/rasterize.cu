@@ -722,17 +722,17 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   AABB aabb = getAABBForTriangle(tri);
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
-      offset = 0;
-      int fragmentId = getIndex(x, y, width);
-      int sampleId = samplesPerPixel * fragmentId + offset;
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
-        unsigned int depth = getFragmentDepth(barycentricCoord, tri);
+      range(offset, 0, samplesPerPixel) {
+        int fragmentId = getIndex(x, y, width);
+        int sampleId = samplesPerPixel * fragmentId + offset;
+        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
+        if (isBarycentricCoordInBounds(barycentricCoord)) {
+          unsigned int depth = getFragmentDepth(barycentricCoord, tri);
 
-        // assign fragEyePos.z to dev_depth[i] iff it is smaller 
-        // (fragment is closer to camera) 
-        atomicMin(depths + sampleId, depth);
-        debug0("depths[0]=%d, depths[-1]=%d\n", depths[0], depths[samplesPerPixel * height * width - 1]);
+          // assign fragEyePos.z to dev_depth[i] iff it is smaller 
+          // (fragment is closer to camera) 
+          atomicMin(depths + sampleId, depth);
+        }
       }
     }
   }
@@ -742,39 +742,40 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
-      offset = 0;
-      int fragmentId = getIndex(x, y, width);
-      int sampleId = samplesPerPixel * fragmentId + offset;
-      glm::vec2 viewPos = glm::vec2(x, y);
-      glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
+      range(offset, 0, samplesPerPixel) {
+        int fragmentId = getIndex(x, y, width);
+        int sampleId = samplesPerPixel * fragmentId + offset;
+        glm::vec2 viewPos = glm::vec2(x, y);
+        glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, viewPos);
 
-      if (isBarycentricCoordInBounds(barycentricCoord)) {
-        float depth = getFragmentDepth(barycentricCoord, tri);
-        if ((unsigned int)depth == depths[sampleId]) {
-          Fragment &fragment = fragments[fragmentId];
+        if (isBarycentricCoordInBounds(barycentricCoord)) {
+          float depth = getFragmentDepth(barycentricCoord, tri);
+          if ((unsigned int)depth == depths[sampleId]) {
+            Fragment &fragment = fragments[fragmentId];
 
-          //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
-          fragment.viewPos = glm::vec3(viewPos, depth);
-          fragment.viewNor = glm::vec3(0);
-          glm::vec2 texcoord(0);
-          float texWeightNorm = 0;
+            //fragment.dev_diffuseTex = primitive.dev_diffuseTex;
+            fragment.viewPos = glm::vec3(viewPos, depth);
+            fragment.viewNor = glm::vec3(0);
+            glm::vec2 texcoord(0);
+            float texWeightNorm = 0;
 
-          int k;
-          range(k, 0, 3) {
-            float weight = barycentricCoord[k];
-            Vertex v = primitive.v[k];
-            fragment.viewNor += weight * v.viewNor;
-            float texWeight = weight / v.viewPos.z;
-            texcoord += texWeight * v.texcoord0;
-            texWeightNorm += texWeight;
+            int k;
+            range(k, 0, 3) {
+              float weight = barycentricCoord[k];
+              Vertex v = primitive.v[k];
+              fragment.viewNor += weight * v.viewNor;
+              float texWeight = weight / v.viewPos.z;
+              texcoord += texWeight * v.texcoord0;
+              texWeightNorm += texWeight;
+            }
+
+            texcoord /= texWeightNorm;
+            glm::vec2 texRes = primitive.texRes;
+            glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
+            int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
+            TextureData *tex = primitive.diffuseTex;
+            fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
           }
-
-          texcoord /= texWeightNorm;
-          glm::vec2 texRes = primitive.texRes;
-          glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
-          int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
-          TextureData *tex = primitive.diffuseTex;
-          fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
         }
       }
     }
