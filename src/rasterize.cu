@@ -12,9 +12,9 @@
 #include "common.h"
 #include <thrust/random/linear_congruential_engine.h>
 #include <thrust/random/uniform_real_distribution.h>
-#define USETEXTURE 0
-#define USELIGHT 0 && USETEXTURE
-#define USEBILINFILTER 0 && USETEXTURE
+#define USETEXTURE 1
+#define USELIGHT 1 && USETEXTURE
+#define USEBILINFILTER 1 && USETEXTURE
 #define USEPERSPECTIVECORRECTION 0 && USETEXTURE
 #define USETILE 0
 #define USELINES 1  && 1-USETEXTURE
@@ -740,7 +740,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		int ymin = getMax(0, aabb.min.y);
 		int ymax = getMin(aabb.max.y, height - 1);
 
-#if (USELINES==0)
+#if (USETEXTURE==1)
 		int fixedDepth;
 		for (int x = xmin; x <= xmax; x++){
 			for (int y = ymin; y <= ymax; y++){ 

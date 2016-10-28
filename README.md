@@ -40,15 +40,22 @@ Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
 ![](imgs/duck3.gif) | ![](imgs/duck4.gif)
 
-Cow | Di
+Checkerboard with perspective correction | Checkerboard without perspective correction
 :-------------------------:|:-------------------------: 
-![](imgs/cow1.gif) | ![](imgs/di1.gif) 
+![](imgs/checkerboard.gif) | ![](imgs/checkerboard2.gif)
 
-Engine | Buggy
-:-------------------------:|:-------------------------: 
-![](imgs/engine1.gif) | ![](imgs/buggy1.gif)
+
+
+Cow | Di|Engine | Buggy
+:-------------------------:|:-------------------------: |:-------------------------:|:-------------------------: 
+![](imgs/cow1.gif) | ![](imgs/di1.gif) |![](imgs/engine1.gif) | ![](imgs/buggy1.gif)
+
+# Analysis
+
 
 #PS: looking for models: just we & just tank
+
+
 
 ### Credits
 
