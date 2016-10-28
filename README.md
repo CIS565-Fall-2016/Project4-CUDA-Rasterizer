@@ -33,8 +33,8 @@ The rasterizer transforms the 2d space into uv texture space and reads from the 
 
 #### Perspective Correct Transformation
 If we naively interpolate the texture coordinates by using the barycentric weights, we'll end up with a distortion unless we take into account our perspective. The below effect demonstrates the affine vs perspective correct transformations.
-<img src="render/affine.png" width="400" height="400"/>
-<img src="render/perspective_correct.png" width="400" height="400"/>
+<img src="render/affine.PNG" width="400" height="400"/>
+<img src="render/perspective_correct.PNG" width="400" height="400"/>
 #### Bilinear Interpolation
 Sometimes sampling the textures leaves us with rough-edged textures 
 
