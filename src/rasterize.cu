@@ -20,9 +20,13 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define TEXTURE 0
+#define TEXTURE 1
 #define BILINEAR 0
 #define CULLING 1
+#define NPR 1
+
+#define RADIUS 6
+#define INTENSITY 50
 
 namespace Rasterizer {
 
@@ -122,6 +126,7 @@ static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
+static Fragment *dev_nprBuffer = NULL;
 
 static float * dev_depth = NULL;
 static int * dev_mutex = NULL;
@@ -182,6 +187,9 @@ void rasterizeInit(int w, int h) {
 
 	cudaFree(dev_mutex);
 	cudaMalloc(&dev_mutex, width * height * sizeof(int));
+
+	cudaFree(dev_nprBuffer);
+	cudaMalloc(&dev_nprBuffer, width * height * sizeof(Fragment));
 
 	checkCUDAError("rasterizeInit");
 }
@@ -664,6 +672,8 @@ void _vertexTransformAndAssembly(
 			primitive.dev_verticesOut[vid].eyePos = glm::vec3(eyePos / eyePos.w);
 		}
 		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
+		
+
 #if TEXTURE == 1
 		primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];		
 		primitive.dev_verticesOut[vid].dev_diffuseTex = primitive.dev_diffuseTex;
@@ -843,6 +853,45 @@ struct backfacing {
 };
 #endif
 
+#if NPR == 1
+__global__ void _npr(int w, int h, Fragment* dev_fragmentBuffer, Fragment* dev_nprBuffer) {
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	if (x < RADIUS || x >= w - RADIUS || y < RADIUS || y >= h - RADIUS) {
+		return;
+	}
+	int index = x + (y * w);
+	int intensityCount[256] = { 0 };
+	int rBuf[256] = { 0 };
+	int gBuf[256] = { 0 };
+	int bBuf[256] = { 0 };
+
+	// iterate in a RADIUS around x,y
+	for (int i = -RADIUS; i <= RADIUS; i++) { // i == y, j == x
+		for (int j = -RADIUS; j <= RADIUS; j++) {
+			glm::ivec3 ayy = dev_fragmentBuffer[x + j + (y + i) * w].color * 255.0f;
+			// find intensity
+			int curIntensity = ((ayy.r + ayy.g + ayy.b) / 3.0) * INTENSITY / 255;
+			if (curIntensity > 255) curIntensity = 255;
+			intensityCount[curIntensity]++;
+			rBuf[curIntensity] += ayy.r;
+			gBuf[curIntensity] += ayy.g;
+			bBuf[curIntensity] += ayy.b;
+
+		}
+	}
+	int curMax = 0;
+	int maxIndex = 0;
+	for (int i = 0; i < 256; i++) {
+		if (intensityCount[i] > curMax) {
+			curMax = intensityCount[i];
+			maxIndex = i;
+		} 
+	}
+	dev_nprBuffer[index].color = glm::vec3(rBuf[maxIndex], gBuf[maxIndex], bBuf[maxIndex]) / (255.0f * curMax);
+}
+#endif
+
 /**
  * Perform rasterization.
  */
@@ -896,7 +945,6 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 #if CULLING == 1
 	auto dev_thrust_primitives = thrust::device_pointer_cast(dev_primitives);
 	numPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numPrimitives, backfacing()) - dev_thrust_primitives;
-	checkCUDAError("backface culling");
 #endif
 
 	// TODO: rasterize
@@ -905,6 +953,12 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	_rasterize << <numBlocksForPrimitives, numThreadsPerBlock >> >(numPrimitives, width, height, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex);
 #if TEXTURE == 1
 	_loadTextures << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
+#endif
+#if NPR == 1
+	cudaMemcpy(dev_nprBuffer, dev_fragmentBuffer, width * height * sizeof(Fragment), cudaMemcpyDeviceToDevice);
+	_npr << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_nprBuffer);
+	std::swap(dev_nprBuffer, dev_fragmentBuffer);
+
 #endif
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
