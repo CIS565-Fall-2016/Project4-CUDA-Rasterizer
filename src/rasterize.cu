@@ -23,8 +23,8 @@
 #define TRIANGLES 1
 
 #define BILINEAR 1
-
-#define BLINNPHONG 1
+#define PERSPECTIVE 0
+#define BLINNPHONG 0
 
 namespace {
 
@@ -264,7 +264,8 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 
 #else
 #endif
-		framebuffer[index] = returnedColorWithSpecular;
+		framebuffer[index] = returnedColorWithoutSpecular;
+	//	framebuffer[index] = returnedColorWithSpecular;
 	}
  }
 
@@ -814,6 +815,13 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	
 }
 
+__device__
+float edgeFunction(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c)
+{
+	return (c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]);
+}
+
+
 //Rasterization 
 __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives, Fragment *dev_fragmentBuffer, int *dev_depth, int width, int height) {
 	int idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -866,6 +874,30 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 						dev_fragmentBuffer[pixelIndex].diffuseTexWidth = dev_primitives[idx].diffuseTexWidth;
 						dev_fragmentBuffer[pixelIndex].diffuseTexHeight = dev_primitives[idx].diffuseTexHeight;
 						dev_fragmentBuffer[pixelIndex].color = color; // test
+
+		//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
+		//https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
+#if PERSPECTIVE
+						
+						float demon[3] = { 1.f / triEyePos[0].z, 1.f / triEyePos[1].z, 1.f / triEyePos[2].z };
+						glm::vec3 uDivZ = glm::vec3(curPixelBaryCoord.x * demon[0], curPixelBaryCoord.y * demon[1], curPixelBaryCoord.z * demon[2]);
+						float depth = (1.0f / (uDivZ.x + uDivZ.y + uDivZ.z));
+						glm::vec2 persTexture = uDivZ.x * triTexcoord0[0] + uDivZ.y * triTexcoord0[1] + uDivZ.z * triTexcoord0[2];
+						dev_fragmentBuffer[pixelIndex].texcoord0 = persTexture * depth;
+
+//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
+					//  triTexcoord0[0] /= tri[0].z; 
+					//	triTexcoord0[1] /= tri[1].z;
+					//	triTexcoord0[2] /= tri[2].z;
+					//	glm::vec2 demon[3] = { triTexcoord0[0], triTexcoord0[1], triTexcoord0[2] };
+					//	tri[0].z = 1.f / tri[0].z;
+					//	tri[1].z = 1.f / tri[1].z;
+					//	tri[2].z = 1.f / tri[2].z;
+
+#else
+						dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
+#endif
+
 					}
 				}
 			}
