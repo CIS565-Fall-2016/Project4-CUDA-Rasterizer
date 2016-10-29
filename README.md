@@ -67,7 +67,7 @@ Bilinear filtering, reference https://en.wikipedia.org/wiki/Bilinear_filtering, 
 
 Duck toon | Di toon
 :-------------------------:|:-------------------------: 
-![](imgs/duck5.gif) | ![](imgs/Di2.gif)
+![](imgs/duck5.gif) | ![](imgs/di2.gif)
 
 Toon Shading, https://www.garagegames.com/community/forums/viewthread/24977
 
