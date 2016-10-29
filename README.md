@@ -10,6 +10,8 @@ CUDA Rasterizer
 
 ![](renders/videos/engine_kbuffer.gif)
 
+------------
+
 ### Features
 
 - [Perspective correct UV texture mapping with bilinear filtering](## UV Texture Mapping)
@@ -68,9 +70,11 @@ k-buffer **ON**        | k-buffer **OFF**
 ![](renders/videos/truck_kbuffer.gif)|![](renders/videos/truck.gif)
 ![](renders/videos/engine_kbuffer.gif)|![](renders/videos/engine.gif)
 
+---------------
+
 # Performance analysis
 
- I profiled using NSight Performance Analysis tool with the following parameters:
+_All profiling was done using NSight Performance Analysis tool with the following parameters_
 
 | Parameters| Value |
 |---|---|
@@ -79,7 +83,7 @@ k-buffer **ON**        | k-buffer **OFF**
 | Resolution | 800x800
 | Kernel launches | 1091 |
 
-The following graph shows the execution time (_microseconds_) for various kernels:
+### Kernel execution time
 
         | Scene used
 :-------------------------:|:-------------------------:
@@ -87,6 +91,8 @@ The following graph shows the execution time (_microseconds_) for various kernel
 
 
 The bottleneck happens in the `_rasterize` kernel because we have to loop through each pixel in every triangle's bounding box. Therefore, each `_rasterize` kernel is bounded by O(n<sup>2</sup>), where n is the size of the triangle's bounding box in screen space. This means that a large triangle with a large bounding box will have a performance hit. To compare, I profiled a scene with the head model where the camera is located at the origin, versus a scene where the camera is zoomed in.
+
+### A close up at `_rasterize`
 
 Camera at origin        | Camera zoomed in
 :-------------------------:|:-------------------------:
@@ -96,7 +102,9 @@ Camera at origin        | Camera zoomed in
 
 As we can see, the `_rasterize` kernel increases significantly in kernel time because each triangle that it has to rasterize now has a larger area with more number of fragments.
 
-Similarly, I profiled the execution time (_microseconds_) with the following features on and off:
+### Kernel execution time vs. features
+
+_Profile is done by enabling each feature one by one_
 
         | Scene used
 :-------------------------:|:-------------------------:
@@ -104,7 +112,13 @@ Similarly, I profiled the execution time (_microseconds_) with the following fea
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
-While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can still scale up really well with high number of triangles.
+### Registers used vs. kernel
+
+![](renders/analysis/register_usage.png)
+
+`_rasterize` and (interestingly) `_vertexTransformAndAssembly` take up a large number of registers, 112 and 95, respectively. This significantly severes the ability for GPU scheduler to optimize the number of active blocks per kernel launch. 
+
+----------------
 
 # Incomplete feature
 
