@@ -121,7 +121,7 @@ void runCuda() {
 #ifdef USE_CENTAUR_MODEL
 	glm::mat4 V = glm::translate(glm::vec3(0, -15, -20));
 #elif defined(USE_ENGINE_MODEL)
-	glm::mat4 V = glm::translate(glm::vec3(0, -15, -1000));
+	glm::mat4 V = glm::translate(glm::vec3(0, -15, -600));
 #elif defined(USE_HEAD_MODEL)
 	glm::mat4 V = glm::translate(glm::vec3(0, 0, 0));
 #else
