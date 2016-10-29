@@ -126,15 +126,13 @@ As expected, bilinear filtering and k-buffer occupy more device time. However, t
 
 To optimize for `render` kernel global memory read from materials list, this data is copied over to __shared__ memory. In the beginning of the `render` kernel call, threads within the same block will copy over the materials data from globabal memory to __shared__ memory. A CUDA `__syncthreads()` is used to make sure this shared data is initialized properly before used.
 
+_The following uses three different scene with varying number of materials and ran for 20,000ms each:_
+
+1 material | 5 materials | 115 materials
+:-------------------------:|:-------------------------:|:-------------------------:
+![](renders/videos/duck.gif)| ![](renders/videos/truck.gif)| ![](renders/videos/engine.gif)|
+
 Let's take a look at the kernel analysis for `render`:
-
-_The following uses three different scene with varying number of materials and ran for 20,000ms each_
-
-Scene used  | Number of materials
-:-------------------------:|:-------------------------:
-![](renders/videos/duck.gif)| 1
-![](renders/videos/truck.gif)| 5
-![](renders/videos/engine.gif)| 115
 
 | Kernel time  | Occupancy
 :-------------------------:|:-------------------------:
