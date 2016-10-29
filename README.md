@@ -81,9 +81,10 @@ k-buffer **ON**        | k-buffer **OFF**
 
 The following graph shows the execution time (_microseconds_) for various kernels:
 
-![](renders/videos/head.gif)
+        | Scene used
+:-------------------------:|:-------------------------:
+![](renders/analysis/head_20s_kernel_time.png)|![](renders/videos/head.gif)
 
-![](renders/analysis/head_20s_kernel_time.png)
 
 The bottleneck happens in the `_rasterize` kernel because we have to loop through each pixel in every triangle's bounding box. Therefore, each `_rasterize` kernel is bounded by O(n<sup>2</sup>), where n is the size of the triangle's bounding box in screen space. This means that a large triangle with a large bounding box will have a performance hit. To compare, I profiled a scene with the head model where the camera is located at the origin, versus a scene where the camera is zoomed in.
 
@@ -97,7 +98,9 @@ As we can see, the `_rasterize` kernel increases significantly in kernel time be
 
 Similarly, I profiled the execution time (_microseconds_) with the following features on and off:
 
-![](renders/analysis/head_20s_kernel_time_with_features.png)
+        | Scene used
+:-------------------------:|:-------------------------:
+![](renders/analysis/head_20s_kernel_time_with_features.png)|![](renders/videos/head.gif)
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
