@@ -76,7 +76,7 @@ An attribute of a fragment inside a triangle can be computed by using barycentri
 
 Incorrect       | Correct
 :-------------------------:|:-------------------------:
-![](renders/checkerboard_incorrect_perspective.png)|![](renders/checkerboard_perspective.png)
+![](renders/checkerboard_incorrect_perspective.png)|![](renders/checkerboard.png)
 
 ### 2. Bilinear filtering
 
@@ -101,7 +101,7 @@ k-buffer is a generalized version of the traditional z-buffer for depth. Instead
 
 k-buffer **ON**        | k-buffer **OFF**
 :-------------------------:|:-------------------------:
-![](renders/videos/truck.gif)|![](renders/videos/truck.gif)
+![](renders/videos/truck_kbuffer.gif)|![](renders/videos/truck.gif)
 
 # Performance analysis
 
@@ -126,7 +126,7 @@ Camera at origin        | Camera zoomed in
 :-------------------------:|:-------------------------:
 ![](renders/head.png)|![](renders/head_zoomed_in.png)
 
-![](renders/analysis/head_20s_zooms.png)
+![](renders/analysis/head_20s_kernel_time_zooms.png)
 
 While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can scale up really well with high number of triangles.
 
