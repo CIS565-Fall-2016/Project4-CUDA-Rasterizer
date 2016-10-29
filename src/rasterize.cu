@@ -196,9 +196,9 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 	__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
 
 	__syncthreads();
-	
+
 	if (x < w && y < h) {
-		
+
 		int local_x = x % BLOCK_WIDTH;
 		int local_y = y % BLOCK_WIDTH;
 		int local_index = local_x + (local_y * BLOCK_WIDTH);
@@ -207,21 +207,19 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 		neighbors[local_index] = framebuffer_in[index];
 
 		__syncthreads();
-		
+
 		// Blur
-		float avg = 1.0f / (11.0f * 11.0f);
+		float avg = 1.0f / (21.0f * 21.0f);
 		int num_shared = 0;
 		int num_global = 0;
 		glm::vec3 final_color(0.0f);
-		for (int i = -5; i <= 5; i++) {
-			for (int j = -5; j <= 5; j++) {
+		for (int i = -10; i <= 10; i++) {
+			for (int j = -10; j <= 10; j++) {
 				int neigh;
 				if ((local_x + i) < 0 || (local_x + i) >= BLOCK_WIDTH ||
-					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH) {
+					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH || true) {
 					// Can't use shared memory
 
-					//num_global++;
-					continue;
 					neigh = x + i + ((y + j) * w);
 					if (neigh > 0 && (x + i) < w && (y + j) < h) {
 						final_color += framebuffer_in[neigh];
@@ -230,13 +228,13 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 				else {
 					// Use shared memory
 
-					//num_shared++;
 					final_color += neighbors[local_index + i + j * BLOCK_WIDTH];
 				}
 			}
 
-		framebuffer_out[index] = final_color * avg;
+			framebuffer_out[index] = final_color * avg;
 
+		}
 	}
 }
 
