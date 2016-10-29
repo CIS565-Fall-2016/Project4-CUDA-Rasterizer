@@ -54,10 +54,10 @@ Before the final step in calculating the lighting of each fragment, we manipulat
 <img src="http://cdn.pcwallart.com/images/maple-leaf-wallpaper-3.jpg" width="400" height="200"/>
 
 ### Performance Analysis
-<img src="renders/analysis4.png" width="400" height="400"/>
-<img src="renders/analysis1.png" width="400" height="400"/>
-<img src="renders/analysis3.png" width="400" height="400"/>
-<img src="renders/analysis2.png" width="400" height="400"/>
+<img src="renders/analysis4.png" width="400" height="300"/>
+<img src="renders/analysis1.png" width="400" height="300"/>
+<img src="renders/analysis3.png" width="400" height="300"/>
+<img src="renders/analysis2.png" width="400" height="300"/>
 
 ### Credits
 
