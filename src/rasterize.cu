@@ -24,7 +24,7 @@
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
 #define getIndex(x, y, width) ((x) + (y) * (width))
-#define SAMPLES_PER_PIXEL 4
+#define SAMPLES_PER_PIXEL 32
 #define AMBIENT_LIGHT 0.1
 #define TUNE_SHADE 0
 #define DEFAULT_COLOR (glm::vec3(0.5))
@@ -646,14 +646,14 @@ void _vertexTransformAndAssembly(
   // Finally transform x and y to viewport space
   // TODO: Apply vertex transformation here
   glm::vec4 modelPos = glm::vec4(vertexParts.pos[IDx], 1); // this is in model space
-  vertex.viewPos = glm::vec3(MV * modelPos);
   vertex.viewNorm = glm::vec3(MV_normal * vertexParts.normal[IDx]);
+  vertex.texcoord0 = vertexParts.texcoord0[IDx];
+  vertex.viewPos = glm::vec3(MV * modelPos);
   glm::vec4 clipPos(MVP * modelPos);
   glm::vec4 screenDims(width, height, 1, 1);
   vertex.screenPos = screenDims * (clipPos / clipPos.w + glm::vec4(1, 1, 1, 0)) / 2.0f;
 
   // Assemble all attribute arrays into the primitive array
-  vertex.texcoord0 = vertexParts.texcoord0[IDx];
 }
 
 
@@ -735,7 +735,7 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
       thrust::default_random_engine seed(getIndex(x, y, width));
       range(offset, 0, SAMPLES_PER_PIXEL) {
         int index = SAMPLES_PER_PIXEL * getIndex(width - x, height - y, width) + offset;
-		  int id = index;
+        int id = index;
         glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
@@ -765,45 +765,43 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
 
         // determine if screenPos is inside polygon
         glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
-        if (isBarycentricCoordInBounds(barycentricCoord)) {
+        unsigned int depth = getFragmentDepth(barycentricCoord, tri);
 
-          unsigned int depth = getFragmentDepth(barycentricCoord, tri);
-          //debug0("depth = %u, min depth = %u, index = %d\n", depth, depths[index], index);
-          //debug("%f/%f \n", depth, INT_MAX);
+        bool condition = isBarycentricCoordInBounds(barycentricCoord) && depth == depths[index];
+        if (condition) {
 
           // if the sample is not occluded
-          if (depth == depths[index]) {
-            Fragment &fragment = fragments[index];
+          Fragment &fragment = fragments[index];
 
 
-            // interpolate texcoord and viewPos and texnorm
-            fragment.viewPos = glm::vec3(0);
-            fragment.viewNorm = glm::vec3(0);
-            glm::vec2 texcoord(0);
-            float texWeightNorm = 0;
-            range(i, 0, 3) {
-              float weight = barycentricCoord[i];
-              Vertex v = primitive.v[i];
+          // interpolate texcoord and viewPos and texnorm
+          fragment.viewPos = glm::vec3(0);
+          fragment.viewNorm = glm::vec3(0);
+          glm::vec2 texcoord(0);
+          float texWeightNorm = 0;
+          range(i, 0, 3) {
+            float weight = barycentricCoord[i];
+            Vertex v = primitive.v[i];
 
-              fragment.viewNorm += weight * v.viewNorm;
-              fragment.viewPos += weight * v.viewPos;
+            fragment.viewNorm += weight * v.viewNorm;
+            fragment.viewPos += weight * v.viewPos;
 
-              float texWeight = weight / (v.viewPos.z + EPSILON);
-              texcoord += texWeight * v.texcoord0;
-              texWeightNorm += texWeight;
-            }
+            float texWeight = weight / (v.viewPos.z + EPSILON);
+            texcoord += texWeight * v.texcoord0;
+            texWeightNorm += texWeight;
+          }
 
-            // get the color using texcoord
-            texcoord /= (texWeightNorm + EPSILON);
-            glm::vec2 texRes = primitive.texRes;
-            glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
-            int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
-            TextureData *tex = primitive.diffuseTex; 
-			if (tex) {
-				fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
-			} else {
-				fragment.color = DEFAULT_COLOR;
-			}
+          // get the color using texcoord
+          texcoord /= (texWeightNorm + EPSILON);
+          glm::vec2 texRes = primitive.texRes;
+          glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
+          int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
+          TextureData *tex = primitive.diffuseTex;
+          if (tex) {
+            fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
+          }
+          else {
+            fragment.color = DEFAULT_COLOR;
           }
         }
       }
@@ -854,7 +852,6 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   dim3 numThreadsPerBlock(128);
   curPrimitiveBeginId = 0;
   {
-
     auto it = mesh2vertexParts.begin();
     auto itEnd = mesh2vertexParts.end();
 
