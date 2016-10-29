@@ -63,8 +63,8 @@ float calculateBarycentricCoordinateValue(glm::vec2 a, glm::vec2 b, glm::vec2 c,
     baryTri[1] = glm::vec3(b, 0);
     baryTri[2] = glm::vec3(c, 0);
 	float signedArea = calculateSignedArea(tri);
-	if (fabs(signedArea) < EPSILON) return -1.0f;
-	return calculateSignedArea(baryTri) / signedArea;
+	if (fabs(signedArea) < EPSILON) return 0.0f;
+	return fabs(calculateSignedArea(baryTri) / signedArea);
 }
 
 // CHECKITOUT
@@ -75,6 +75,13 @@ __host__ __device__ static
 glm::vec3 calculateBarycentricCoordinate(const glm::vec3 tri[3], glm::vec2 point) {
     float beta  = calculateBarycentricCoordinateValue(glm::vec2(tri[0].x, tri[0].y), point, glm::vec2(tri[2].x, tri[2].y), tri);
     float gamma = calculateBarycentricCoordinateValue(glm::vec2(tri[0].x, tri[0].y), glm::vec2(tri[1].x, tri[1].y), point, tri);
+	//if (beta < 0.0f)
+	//	beta = 0.f;
+	//if (gamma < 0.0f)
+	//	gamma = 0.f;
+	if (beta > 1.0f) return glm::vec3(0.0f, 1.0f, 0.0f);
+	else if (gamma > 1.0f) return glm::vec3(0.0f, 0.0f, 1.0f);
+	else if (beta + gamma >1.0f) return glm::vec3(0.0f, beta, gamma);
     float alpha = 1.0 - beta - gamma;
     return glm::vec3(alpha, beta, gamma);
 }
@@ -104,10 +111,14 @@ float getZAtCoordinate(const glm::vec3 barycentricCoord, const glm::vec3 tri[3])
 
 __host__ __device__ static
 glm::vec3 getTextureColor(unsigned char *pTex, glm::vec2 texcoord, int w, int h, int component) {
-		int x = (w - 1.f) * texcoord.x;
-		int y = (h - 1.f) * texcoord.y;
+		int x = 0.5f + (w - 1.f) * texcoord.x;
+		int y = 0.5f + (h - 1.f) * texcoord.y;
 		float scale = 1.0f / 255.0f;
 		int index = x + y * w;
+		//if (index < 0 || index >= w * h)
+		//	printf("%d %d\n",index,w*h);
+		//if (index < 0) index = 0;
+		//else if (index >= w * h) index = w * h - 1;
 
 		return scale * glm::vec3(pTex[index * component],
 			pTex[index * component + 1],
