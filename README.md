@@ -6,7 +6,7 @@ CUDA Rasterizer
 * Ottavio Hartman
 * Tested on: Windows 10, AMD Fx-8320 @ 3.50GHz 8GB, GTX 1060 3GB (Personal Desktop)
 
-![Rasterizer](img/truck_lines.PNG)
+[![Youtube Link](img/truck_lines.PNG)](https://youtu.be/FjwkaiwPMLU)
 ### Overview
 I have implemented an efficient CUDA rasterizer with Blinn-Phong shading, support for triangles, lines, and points, and an efficient blur using shared memory. The basic overview of the pipeline I used is as follows: 
 
@@ -22,13 +22,18 @@ Parallelizing over the primitives in the scene with their vertices in screen spa
 Another step in the rasterization kernel is depth-testing. I used a mutex integer buffer, `dev_mutex`, which provides locks for the fragments so they can depth-test and possibly write to the `int` depth buffer without race conditions. 
 
 This is an example of what the rasterization looks like without proper mutex locks to prevent race conditions when depth-testing. There are small black dots randomly spread out in the image which correspond to improperly depth-tested pixels--these pixels are actually the back-facing pixels on the other side of the duck.
+
 ![race condition](img/Duck_blinn_phong.PNG)
 
 #### Lines and Points
 I additionally implemented line and point rendering. Point rasterization is very simple: for every vertex, simply "fill in" the corresponding pixel. Line rasterization required more effort since every pixel on the line needs to be touching its neighbors on the line. The method I used (which is roughly based on [MIT's Frédo Durand and Seth Teller's lectures](http://groups.csail.mit.edu/graphics/classes/6.837/F02/lectures/6.837-7_Line.pdf)), calculates the slope of the line first. There are two cases which I've implemented: if the slope of the line is less than or equal to 1, or if it is greater than 1. The reason for dividing into two cases is because line rasterization steps 1 pixel in the x or y direction and then steps some `float` distance in the opposite direction and fills in the pixel. The way to choose which "1 pixel" step the kernel should use is based on whether the line has a slope greater or less than 1. The main loop of the kernel steps pixel by pixel along the line and proceeds to color them in.
 
+![points](img/duck_points.PNG)
+
+![lines](img/truck_lines.PNG)
 ### Shading
 The fragment shader uses the calculated normals from the previous steps to apply a properly-shaded Blinn-Phong model (Blinn-phong used from [here](https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model)). Unlike the rasterization step, the fragment shader is a kernel which runs on each pixel of the fragment buffer.
+
 ![blinn-phong](img/truck_shaded.PNG).
 
 ### Blur
