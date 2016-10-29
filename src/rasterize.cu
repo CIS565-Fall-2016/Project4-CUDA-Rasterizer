@@ -846,14 +846,9 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 		glm::vec2 ipos[3];
 		for (int i = 0; i < 3; i++) {
 			glm::vec2 a, b;
-			if (p.v[i].pos.x > p.v[(i + 1) % 3].pos.x) {
-				a = glm::vec2(p.v[i].pos);
-				b = glm::vec2(p.v[(i + 1) % 3].pos);
-			}
-			else {
-				a = glm::vec2(p.v[(i + 1) % 3].pos);
-				b = glm::vec2(p.v[i].pos);
-			}
+			a = glm::vec2(p.v[i].pos);
+			b = glm::vec2(p.v[(i + 1) % 3].pos);
+
 			glm::vec2 xydiff(a.x - b.x, a.y - b.y);
 			glm::normalize(xydiff);
 			float m;
@@ -875,12 +870,12 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 
 			if (fabsf(m) <= 1.0f) {
 				for (int j = 0; j < dist; j++) {
-					point.x += 1.0f;
-					float newy = point.y + m;
+					point.x -= 1.0f;
+					float newy = point.y - m;
 					if (newy < 0.0f || newy >= h) { 
 					}
 					else {
-						point.y += m;
+						point.y = newy;
 
 						fragmentbuffer[(int)point.x + (int)point.y * w].color = glm::vec3((float)j / (float)dist, .5f, .0f);
 					}
