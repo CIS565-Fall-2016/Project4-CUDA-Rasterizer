@@ -6,6 +6,11 @@ CUDA Rasterizer
 * Xiang Deng
 * Tested on:  Windows 10-Home, i7-6700U @ 2.6GHz 16GB, GTX 1060 6GB (Personal Computer)
 
+* Overview
+In this project we use CUDA to implement the raterizerized graphics pipeline. Major features
+include vertex shading, primitive assembly, raterization and fragment shading. Here is a list of features:
+
+
 **Features:**
 
 * Basic pipeline
@@ -23,7 +28,7 @@ Milk truck | Duck
 :-------------------------:|:-------------------------: 
 ![](imgs/milk1.gif) | ![](imgs/duck1.gif) 
 
-
+Demo of basic raterization pipeline, we used lambert lighting for the fragement shader.
 
 VC
 ![](imgs/VC1.gif)
@@ -32,7 +37,7 @@ Cow with Lines | VC with Lines |Truck with Lines
 :-------------------------:|:-------------------------:  |:-------------------------:
 ![](imgs/cow2.gif) | ![](imgs/VC2.gif) |![](imgs/truck2.gif)
 
-
+Here is a demo of rasterizing lines.
 
 
 
@@ -40,14 +45,20 @@ Duck with Points (dense) | Duck with Points (sparse)
 :-------------------------:|:-------------------------: 
 ![](imgs/duck3.gif) | ![](imgs/duck4.gif)
 
+Here is a demo of rasterizing points; the user is allowed to specify the sparsity of the point cloud on the top of raterize.cu.
+
 Checkerboard with perspective correction | Checkerboard without perspective correction
 :-------------------------:|:-------------------------: 
 ![](imgs/checkerboard.gif) | ![](imgs/checkerboard2.gif)
+
+Perspective correction: please see the reference https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness. Without perspective correction,
+we can observe the 'distorted' image generated from the raterization pipeline.
 
 Checkerboard with bilinear filtering | Checkerboard without bilinear filtering
 :-------------------------:|:-------------------------: 
 ![](imgs/checkwithbin.JPG) | ![](imgs/checkwithnobin.JPG)
 
+Bilinear filtering, reference https://en.wikipedia.org/wiki/Bilinear_filtering, we can observe the smoothing effect on the lines over the checkerboard.
 
 
 Cow | Di|Engine | Buggy| Flower with Lines
@@ -76,9 +87,10 @@ could for example, use shared memomry to decrease the overhead of memomry alloca
 as we observe the overhead of primitive assembly, rending and depth init in the left two charts).
 It would be cool to implement tile based rasterizing in the future.
 
-#PS: looking for models: just we & just tank : ]
+*PS: looking for models: just we & just tank : ]
 
-
+*CMakeLists change
+ 'common.h' file is added to the cmakelist file; sm20 --> sm61.
 
 ### Credits
 
