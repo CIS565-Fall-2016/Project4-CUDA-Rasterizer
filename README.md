@@ -6,7 +6,8 @@ CUDA Rasterizer
 * Ottavio Hartman
 * Tested on: Windows 10, AMD Fx-8320 @ 3.50GHz 8GB, GTX 1060 3GB (Personal Desktop)
 
-[![Youtube Link](img/truck_lines.PNG)](https://youtu.be/FjwkaiwPMLU)
+#### Video:
+[![Youtube Link](img/Duck_blinn_phong2.PNG)](https://youtu.be/FjwkaiwPMLU)
 ### Overview
 I have implemented an efficient CUDA rasterizer with Blinn-Phong shading, support for triangles, lines, and points, and an efficient blur using shared memory. The basic overview of the pipeline I used is as follows: 
 
