@@ -6,34 +6,11 @@ CUDA Rasterizer
 * Trung Le
 * Windows 10 Home, i7-4790 CPU @ 3.60GHz 12GB, GTX 980 Ti (Person desktop)
 
-# Device information
-
-### General information for CUDA device
-- Device name: GeForce GTX 980 Ti
-- Compute capability: 5.2
-- Compute mode: Default
-- Clock rate: 1076000
-- Integrated: 0
-- Device copy overlap: Enabled
-- Kernel execution timeout: Enabled
- 
-### Memory information for CUDA device
-
-- Total global memory: 6442450944
-- Total constant memory: 65536
-- Multiprocessor count: 22
-- Shared memory per multiprocessor: 98304
-- Registers per multiprocessor: 65536
-- Max threads per multiprocessor: 2048
-- Max grid dimensions: [2147483647, 65535, 65535]
-- Max threads per block: 1024
-- Max registers per block: 65536
-- Max thread dimensions: [1024, 1024, 64]
-- Threads per block: 512
-
 # Rasterizer
 
-# Scenes
+![](renders/videos/engine_kbuffer.gif)
+
+### Scenes
 
 
 |   |   | Triangle count | Source | 
@@ -167,6 +144,31 @@ When `float` and `int` conversion goes wrong...
 When your ghost friend won't stop staring at you :-)
 
 ![](renders/videos/head_kbuffer.gif)
+
+# Device information
+
+### General information for CUDA device
+- Device name: GeForce GTX 980 Ti
+- Compute capability: 5.2
+- Compute mode: Default
+- Clock rate: 1076000
+- Integrated: 0
+- Device copy overlap: Enabled
+- Kernel execution timeout: Enabled
+ 
+### Memory information for CUDA device
+
+- Total global memory: 6442450944
+- Total constant memory: 65536
+- Multiprocessor count: 22
+- Shared memory per multiprocessor: 98304
+- Registers per multiprocessor: 65536
+- Max threads per multiprocessor: 2048
+- Max grid dimensions: [2147483647, 65535, 65535]
+- Max threads per block: 1024
+- Max registers per block: 65536
+- Max thread dimensions: [1024, 1024, 64]
+- Threads per block: 512
 
 ### Credits
 
