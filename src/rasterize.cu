@@ -14,12 +14,13 @@
 #include <thrust/random/uniform_real_distribution.h>
 #include <iostream>
 #include <fstream>
-#define USETEXTURE 0
+#define USETEXTURE 1
+#define USETOON 1 && USETEXTURE
 #define USELIGHT 1 && USETEXTURE
 #define USEBILINFILTER 1 && USETEXTURE
 #define USEPERSPECTIVECORRECTION 1 && USETEXTURE
 #define USETILE 0
-#define USELINES 1 && 1-USETEXTURE
+#define USELINES 0 && 1-USETEXTURE
 #define USEPOINTS 0 && 1-USETEXTURE
 #define SPARSITY 20 //sparsity of point cloud (if on)
 #define DOTIMING 1
@@ -73,8 +74,24 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	if (x < w && y < h) {
 		Fragment & curFrag = fragmentBuffer[index];
 		framebuffer[index] = fragmentBuffer[index].color;
-#if USELIGHT==1		
+#if USELIGHT==1
 		framebuffer[index] *= glm::dot(light, fragmentBuffer[index].eyeNor);
+#endif	
+#if USETOON==1		//https://www.garagegames.com/community/forums/viewthread/24977
+		float dot = glm::max(glm::dot(light, fragmentBuffer[index].eyeNor),0.0f);
+		if (dot>0.75){
+			framebuffer[index] *= glm::vec3(1.0f);
+		}
+		else if (dot > 0.5){
+			framebuffer[index] *= glm::vec3(0.5f);
+		}
+		else if (dot > 0.05){
+			framebuffer[index] *= glm::vec3(0.25f);
+		}
+		else {
+			framebuffer[index] *= glm::vec3(0.1f);
+		}
+		
 #endif		
 	}
 }
@@ -621,7 +638,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].texHeight = primitive.texHeight;
 			dev_primitives[pid + curPrimitiveBeginId].texWidth = primitive.texWidth;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 1.0, 0.0);
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = glm::vec3(1.0, 0.0, 0.0);
 			//currently default color is red for all
 		}
 		// TODO: other primitive types (point, line)
@@ -747,7 +764,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 
 #if (USETEXTURE==1)
 		int fixedDepth;
-		printf("%d \n", xmax - xmin);
+		//printf("%d \n", xmax - xmin);
 		for (int x = xmin; x <= xmax; x++){
 			for (int y = ymin; y <= ymax; y++){ 
 				int pid = x + y*width;

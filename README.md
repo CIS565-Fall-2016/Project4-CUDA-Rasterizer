@@ -23,6 +23,7 @@ include vertex shading, primitive assembly, raterization and fragment shading. H
   * Fragment-to-depth-buffer writing (with atomics for race avoidance).
   * A depth buffer for storing and depth testing fragments. 
   * Interpolation near primitive points
+  * Toon Shading
 * UV texture mapping with bilinear texture filtering and perspective correct texture coordinates
 * Support for rasterizing additional primitives: lines and points
 
@@ -64,6 +65,11 @@ Checkerboard with bilinear filtering | Checkerboard without bilinear filtering
 
 Bilinear filtering, reference https://en.wikipedia.org/wiki/Bilinear_filtering, we can observe the smoothing effect on the lines over the checkerboard.
 
+Duck toon | Di toon
+:-------------------------:|:-------------------------: 
+![](imgs/duck5.gif) | ![](imgs/Di2.gif)
+
+Toon Shading, https://www.garagegames.com/community/forums/viewthread/24977
 
 Cow | Di|Engine | Buggy| Flower with Lines
 :-------------------------:|:-------------------------: |:-------------------------:|:-------------------------: |:-------------------------: 
