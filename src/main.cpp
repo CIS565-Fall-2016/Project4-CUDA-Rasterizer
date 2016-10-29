@@ -96,8 +96,10 @@ void mainLoop() {
 //---------RUNTIME STUFF---------
 //-------------------------------
 float scale = 1.0f;
-float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
+float x_trans = 0.0f, y_trans = 0.0f, z_trans = -4.0f;
 float x_angle = 0.0f, y_angle = 0.0f;bool flag = false;int c = 0;
+//float x_trans = 0.0f, y_trans = 0.0f, z_trans = -3.0f;
+//float x_angle = 0.63f, y_angle = 3.19f;bool flag = false;int c = 0;
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
@@ -117,7 +119,7 @@ void runCuda() {
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
 	glm::mat4 MVP = P * MV;
-
+	//printf("camera:%f %f %f\n", x_angle, y_angle, z_trans);
     cudaGLMapBufferObject((void **)&dptr, pbo);
 	
 	//if (!flag)

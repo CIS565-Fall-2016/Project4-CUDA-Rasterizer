@@ -125,3 +125,37 @@ glm::vec3 getTextureColor(unsigned char *pTex, glm::vec2 texcoord, int w, int h,
 			pTex[index * component + 2]);
 }
 
+__host__ __device__ static
+	glm::vec3 getBilinearTextureColor(unsigned char *pTex, glm::vec2 texcoord, int w, int h, int component) {
+		float u = (w - 1.f) * texcoord.x;
+		float v = (h - 1.f) * texcoord.y;
+		int x = floor(u);
+		int y = floor(v);
+		float u_ratio = u - x;
+		float v_ratio = v - y;
+		float u_oppsite = 1 - u_ratio;
+		float v_oppsite = 1 - v_ratio;
+		int xNext = x + 1;
+		int yNext = y + 1;
+		if (xNext >= w)
+			xNext = w - 1;
+		if (yNext >= h)
+			yNext = h - 1;
+		int index0 = x + y * w;
+		int index1 = xNext + y * w;
+		int index2 = x + yNext * w;
+		int index3 = xNext + yNext * w;
+
+		glm::vec3 c0(pTex[index0 * component], pTex[index0 * component + 1], pTex[index0 * component + 2]);
+		glm::vec3 c1(pTex[index1 * component], pTex[index1 * component + 1], pTex[index1 * component + 2]);
+		glm::vec3 c2(pTex[index2 * component], pTex[index2 * component + 1], pTex[index2 * component + 2]);
+		glm::vec3 c3(pTex[index3 * component], pTex[index3 * component + 1], pTex[index3 * component + 2]);
+
+		float scale = 1.0f / 255.0f;
+		//if (index < 0 || index >= w * h)
+		//	printf("%d %d\n",index,w*h);
+		//if (index < 0) index = 0;
+		//else if (index >= w * h) index = w * h - 1;
+		//return scale * c0;
+		return scale * ((c0 * u_oppsite + c1 * u_ratio) * v_oppsite + (c2 * u_oppsite + c3 * u_ratio) * v_ratio);
+}
