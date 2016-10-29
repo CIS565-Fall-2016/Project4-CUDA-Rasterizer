@@ -867,6 +867,7 @@ It is commonly used to draw line primitives in a bitmap image (e.g. on a compute
 		for (int i = 0; i <= length; i++) {
 			glm::vec3 p = lerp(float(i) / length, v1, v2); // alright in the old way I always change i to zero...
 			int pixelIndex = (int)p.x + (int)p.y * width;  //if I use float, I may have blooper......the lines just become incorrect
+			fragBuffer[pixelIndex].color = glm::vec3(0.4f, 0.8f, 0.6f);
 		}
 	}
 }
