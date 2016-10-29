@@ -142,13 +142,27 @@ Similarly, I profiled the execution time (_microseconds_) with the following fea
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
-# WIP
+# Incomplete feature
 
 Backface culling is implemented, but without stream compaction. I only include here the reference renders for this feature but it is incomlete as to gain proper performace increase.
 
-Flower with backface culling        | Flower with backface cullin
+Flower with backface culling        | Flower with backface culling
 :-------------------------:|:-------------------------:
 ![](renders/flower_bf_culling.png)|![](renders/flower_no_bf_culling.png)
+
+# Bonus artistic renders!
+
+When `float` and `int` conversion goes wrong...
+
+![](renders/bloopers/blooper_checkerboard.png)
+
+![](renders/bloopers/blooper_duck0.png)
+
+![](renders/bloopers/blooper_duck1.png)
+
+When your ghost friend won't stop staring at you :-)
+
+![](renders/videos/head_kbuffer.gif)
 
 ### Credits
 
