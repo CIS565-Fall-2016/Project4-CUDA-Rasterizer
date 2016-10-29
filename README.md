@@ -33,17 +33,33 @@ CUDA Rasterizer
 
 # Rasterizer
 
+# Scenes
+
+
+|   |   | Triangle count | Source | 
+|---|---|---|---|
+| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
+| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
+| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
+| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
+| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
+| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
+| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
+| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
+|2 cylinder engine| ![](renders/engine.png) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+
+Renders of normal and depth attributes:
 
 Diffuse        | Normal | Depth |
 :-------------------------:|:-------------------------:|:-------------------------:
 ![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
 
-# Features
+### Features
 
 - [Perspective correct UV texture mapping with bilinear filtering](## UV Texture Mapping)
 - [Order independent transparency using k-buffer](## Order independent transparency using k-buffer)
 
-# Flags
+### Flags
 
 The following header flags can be found in `rasterize.cu`:
 
@@ -60,20 +76,6 @@ The following header flags can be found in `main.cpp`:
 - `#define USE_CENTAUR_MODEL`: Uncomment if using the `cent.gltf` model
 - `#define USE_HEAD_MODEL`: Uncomment if using the `head.gltf` model
 - `#define USE_ENGINE_MODEL`: Uncomment if using the `2_cylinder_engine.gltf` model
-
-# Scenes
-
-|   |   | Triangle count | Source | 
-|---|---|---|---|
-| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
-| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
-| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
-| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
-| Cesium truck | ![](renders/videos/truck.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
-| Flower | ![](renders/flower_no_bf_culling.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
-| Cow | ![](renders/cow.png) | 5804 | [gltf](gltfs/cow/cow.gltf) |
-| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders/engine.png) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
 
 ## UV Texture Mapping
 ### 1. Perspective correct
