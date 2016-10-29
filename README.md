@@ -71,9 +71,10 @@ As for each kernel we have to iterate through the entire boundary box to compute
 might significantly decrease the performance. If we can saturate the threads as much as possible while decrease the average size of the triangle, we
 can expect an improvment in the performance.
 
-On the other hand, in case our average triangle is small enough, we might need to concern about clearing the depth memory, and the rendering. We
-could for example, use shared memomry to decrease the overhead of memomry allocation and access for initializing the depth buffer.
-
+On the other hand, in case our average triangle is small enough, we might need to concern about memory allocation and access. We
+could for example, use shared memomry to decrease the overhead of memomry allocation and access for initializing the depth buffer as well as the memory access in other kernel functions (we can find more evidence 
+as we observe the overhead of primitive assembly, rending and depth init in the left two charts).
+It would be cool to implement tile based rasterizing in the future.
 
 #PS: looking for models: just we & just tank : ]
 
