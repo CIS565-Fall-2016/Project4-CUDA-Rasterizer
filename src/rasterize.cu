@@ -125,7 +125,7 @@ static int tile_h_count = 0;
 const int tile_width = 16;
 const int tile_height = 16;
 
-const int max_tile_prim_count = 128;
+const int max_tile_prim_count = 64;
 static Primitive * dev_tile_primitives = nullptr;
 static int * dev_tile_prim_counts = nullptr;
 #endif
