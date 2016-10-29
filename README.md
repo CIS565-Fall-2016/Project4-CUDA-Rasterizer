@@ -40,7 +40,7 @@ Diffuse        | Normal | Depth |
 
 # Features
 
-- [UV texture mapping](## UV Texture Mapping)
+- [Perspective correct UV texture mapping with bilinear filtering](## UV Texture Mapping)
 - [Order independent transparency using k-buffer](## Order independent transparency using k-buffer)
 
 # Flags
@@ -65,9 +65,15 @@ The following header flags can be found in `main.cpp`:
 
 |   |   | Triangle count | Source | 
 |---|---|---|---|
-| Cow | ![](renders\cow.png) | 5804 | [gltfs](gltfs/cow/cow.gltf) |
-| Head | 17684 | [gltfs](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders\engine.png) | 121496 | [gltfs](gltfs/2_cylinder_engine/2_cylinder_engine.gltf) |
+| Duck | ![](renders/duck.png) | | [gltf](gltfs/duck/duck.gltf) |
+| Wolf | ![](renders/videos/wolf.gif) | | [gltf](gltfs/wolf/wolf.gltf) |
+| Octocat | ![](renders/octocat.png) | | [gltf](gltfs/octocat/octocat.gltf) |
+| Centaur | ![](renders/videos/centaur.gif) | | [gltf](gltfs/cent/cent.gltf) |
+| Cesium truck | ![](renders/videos/truck.gif) | | [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
+| Flower | ![](renders/flower_no_bf_culling.png) | | [gltf](gltfs/flower/flower.gltf) |
+| Cow | ![](renders/cow.png) | 5804 | [gltf](gltfs/cow/cow.gltf) |
+| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
+|2 cylinder engine| ![](renders/engine.png) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
 
 ## UV Texture Mapping
 ### 1. Perspective correct
@@ -136,6 +142,13 @@ Similarly, I profiled the execution time (_microseconds_) with the following fea
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
+# WIP
+
+Backface culling is implemented, but without stream compaction. I only include here the reference renders for this feature but it is incomlete as to gain proper performace increase.
+
+Flower with backface culling        | Flower with backface cullin
+:-------------------------:|:-------------------------:
+![](renders/flower_bf_culling.png)|![](renders/flower_no_bf_culling.png)
 
 ### Credits
 
