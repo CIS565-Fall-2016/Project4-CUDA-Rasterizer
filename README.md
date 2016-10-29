@@ -54,6 +54,8 @@ Before the final step in calculating the lighting of each fragment, we manipulat
 <img src="http://cdn.pcwallart.com/images/maple-leaf-wallpaper-3.jpg" width="400" height="200"/>
 
 ### Performance Analysis
+The vast majority of the time is taken up by the NPR shader since it performs a lookup to nearby fragments in the fragment buffer. As a result, it hits global memory pretty frequently, thus taking up a large chunk of compute time. I believe using shared memory here would benefit the algorithm greatly as the algorithm is solely based on the locality of the fragments. Time permitting, I will probably implement shared memory version of the shader at a later date. Backface culling, despite removing a large number of primitives, still only improves rasterization speed by ~9% in the ducky scene and ~4% in the cesium truck scene. Texture loading is relatively fast, and all other assembly/transfer kernels are relatively fast. The bottleneck which I had hoped culling would relieve was rasterization but the improvement seems to be minimal. 
+
 <img src="renders/analysis4.png" width="400" height="300"/>
 <img src="renders/analysis1.png" width="400" height="300"/>
 <img src="renders/analysis3.png" width="400" height="300"/>
