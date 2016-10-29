@@ -1,3 +1,4 @@
+message("ROOT")
 cmake_minimum_required(VERSION 3.0)
 
 project(cis565_rasterizer)
