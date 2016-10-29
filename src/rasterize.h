@@ -22,5 +22,5 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene);
 
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal, 
                int displaymode, bool perepectivecorrect, 
-               bool spec, bool aa, bool supersample, bool culling, bool testingmode, bool aabbcheck);
+               bool spec, bool aa, bool supersample, bool culling, bool testingmode, bool aabbcheck, bool cheapculling);
 void rasterizeFree();

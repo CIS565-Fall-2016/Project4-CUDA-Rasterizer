@@ -23,7 +23,7 @@ static bool supersample = false;
 static bool culling = true;
 static bool testingmode = false;
 static bool aabbcheck = true;
-
+static bool cheapculling = false;
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
@@ -138,7 +138,7 @@ void runCuda() {
     rasterize(dptr, MVP, MV, MV_normal, 
               displaymode, perspectivecorrect, 
               spec, antialias, supersample, 
-              culling, testingmode, aabbcheck);
+              culling, testingmode, aabbcheck, cheapculling);
     cudaGLUnmapBufferObject(pbo);
 
     frame++;
@@ -377,6 +377,10 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         else if (key == GLFW_KEY_B){
             aabbcheck = !aabbcheck;
             printf("\nbounding box check = %d", aabbcheck);
+        }
+        else if (key == GLFW_KEY_X){
+            cheapculling = !cheapculling;
+            printf("\nbounding box check = %d", cheapculling);
         }
     }
 }

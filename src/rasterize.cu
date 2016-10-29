@@ -863,7 +863,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 __global__
 void scanline(int w, int h, Fragment* dev_fragBuffer, int numidx, int idbegin,
 Primitive* dev_primitives, PrimitiveDevBufPointers primitive,
-int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
+int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck, bool cheapculling)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -924,7 +924,6 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
             }
             else
             {
-
                 //printf("\nHELLO WE ARE HERE!");
                 if (mode == 0)  // polygons
                 {
@@ -1030,83 +1029,77 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                         dev_fragBuffer[index].depth = depth;
                     }
                 }
-                else if (mode == 1)
+                else if (mode == 1 && (bc.x <= 0.04f || bc.y <= 0.04f || bc.z <= 0.04f))
                 {
-                    float eps = 0.04f;
-                    if (mode == 1 && (bc.x <= eps || bc.y <= eps || bc.z <= eps))
+                    // get the position from barycenter
+                    glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
+
+                    float tmp_depth = pp.z;
+                    if (tmp_depth < depth)
                     {
-                        // get the position from barycenter
-                        glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
-
-                        float tmp_depth = pp.z;
-                        if (tmp_depth < depth)
-                        {
-                            glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
-                                dev_primitives[i].v[0].eyeNor,
-                                dev_primitives[i].v[0].eyeNor };
+                        glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
+                            dev_primitives[i].v[0].eyeNor,
+                            dev_primitives[i].v[0].eyeNor };
 
 
-                            glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
-                                dev_primitives[i].v[0].eyePos,
-                                dev_primitives[i].v[0].eyePos };
+                        glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
+                            dev_primitives[i].v[0].eyePos,
+                            dev_primitives[i].v[0].eyePos };
 
-                            glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
-                            nn = glm::normalize(nn);
+                        glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
+                        nn = glm::normalize(nn);
 
-                            glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
+                        glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
 
-                            depth = tmp_depth;
-                            dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
-                            dev_fragBuffer[index].eyeNor = nn;
-                            dev_fragBuffer[index].eyePos = ee;
+                        depth = tmp_depth;
+                        dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
+                        dev_fragBuffer[index].eyeNor = nn;
+                        dev_fragBuffer[index].eyePos = ee;
 
-                            float dt = glm::dot(glm::normalize(ee - pp), nn);
-                            dev_fragBuffer[index].color *= dt;
-                            dev_fragBuffer[index].depth = depth;
-                        }
+                        float dt = glm::dot(glm::normalize(ee - pp), nn);
+                        dev_fragBuffer[index].color *= dt;
+                        dev_fragBuffer[index].depth = depth;
                     }
                 }
-                else
+                
+                else if ((bc.x <= 0.04f && bc.y <= 0.04f) ||
+                         (bc.x <= 0.04f && bc.z <= 0.04f) ||
+                         (bc.y <= 0.04f && bc.z <= 0.04f))
                 {
-                    float eps = 0.04f;
-                    if ((bc.x <= eps && bc.y <= eps) ||
-                        (bc.x <= eps && bc.z <= eps) ||
-                        (bc.y <= eps && bc.z <= eps))
+                    // get the position from barycenter
+                    glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
+
+                    float tmp_depth = pp.z;
+                    if (tmp_depth < depth)
                     {
-                        // get the position from barycenter
-                        glm::vec3 pp = p[0] * bc.x + p[1] * bc.y + p[2] * bc.z;
-
-                        float tmp_depth = pp.z;
-                        if (tmp_depth < depth)
-                        {
-                            glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
-                                dev_primitives[i].v[0].eyeNor,
-                                dev_primitives[i].v[0].eyeNor };
+                        glm::vec3 n[] = { dev_primitives[i].v[0].eyeNor,
+                            dev_primitives[i].v[0].eyeNor,
+                            dev_primitives[i].v[0].eyeNor };
 
 
-                            glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
-                                dev_primitives[i].v[0].eyePos,
-                                dev_primitives[i].v[0].eyePos };
+                        glm::vec3 e[] = { dev_primitives[i].v[0].eyePos,
+                            dev_primitives[i].v[0].eyePos,
+                            dev_primitives[i].v[0].eyePos };
 
-                            glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
-                            nn = glm::normalize(nn);
+                        glm::vec3 nn = n[0] * bc.x + n[1] * bc.y + n[2] * bc.z;
+                        nn = glm::normalize(nn);
 
-                            glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
+                        glm::vec3 ee = e[0] * bc.x + e[1] * bc.y + e[2] * bc.z;
 
 
-                            depth = tmp_depth;
-                            dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
-                            dev_fragBuffer[index].eyeNor = nn;
-                            dev_fragBuffer[index].eyePos = ee;
+                        depth = tmp_depth;
+                        dev_fragBuffer[index].color = glm::vec3(1.0, 1.0, 1.0);
+                        dev_fragBuffer[index].eyeNor = nn;
+                        dev_fragBuffer[index].eyePos = ee;
 
-                            float dt = glm::dot(glm::normalize(ee - pp), nn);
-                            dev_fragBuffer[index].color *= dt;
-                            dev_fragBuffer[index].depth = depth;
+                        float dt = glm::dot(glm::normalize(ee - pp), nn);
+                        dev_fragBuffer[index].color *= dt;
+                        dev_fragBuffer[index].depth = depth;
 
-                        }
                     }
                 }
-                //break;  // dangerous bold move used after sorting that assumes that no bigger polygons intersect
+                if (cheapculling) // not advised
+                    break;  // dangerous bold move used after sorting that assumes that no bigger polygons intersect
             }
             //printf("3");
         }
@@ -1324,7 +1317,7 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset)
 //
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal,
                int displaymode, bool perepectivecorrect, bool spec, bool aa, bool supersample, 
-               bool culling, bool testingmode, bool aabbcheck) {
+               bool culling, bool testingmode, bool aabbcheck, bool cheapculling) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width - 1) / blockSize2d.x + 1,
@@ -1455,7 +1448,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                 *p,
                                                 displaymode,
                                                 perepectivecorrect, 0, 0,
-                                                aabbcheck);
+                                                aabbcheck, cheapculling);
     checkCUDAError("scanline");
     //accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
     //checkCUDAError("accumframebuffers");
@@ -1493,7 +1486,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     *p,
                                                     displaymode,
                                                     perepectivecorrect, 0.2, 0,
-                                                    aabbcheck);
+                                                    aabbcheck, cheapculling);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
@@ -1509,7 +1502,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     *p,
                                                     displaymode,
                                                     perepectivecorrect, 0, 0.25,
-                                                    aabbcheck);
+                                                    aabbcheck, cheapculling);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
@@ -1525,7 +1518,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
                                                     *p,
                                                     displaymode,
                                                     perepectivecorrect, 0.25, 0.2,
-                                                    aabbcheck);
+                                                    aabbcheck, cheapculling);
 
         checkCUDAError("Scanline");
         accumframebuffers << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_dsfragmentBuffer);
