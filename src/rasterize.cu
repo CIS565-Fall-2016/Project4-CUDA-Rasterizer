@@ -796,12 +796,12 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 		// Get bounding box
 		AABB bb = getAABBForTriangle(tri);
 		glm::ivec2 min, max;
-		
+
 		min = glm::ivec2((int)floorf(0.5f * (bb.min.x + 1.0f) * (float)w),
-			             (int)floorf(0.5f * (bb.min.y + 1.0f) * (float)h));
-	
+			(int)floorf(0.5f * (bb.min.y + 1.0f) * (float)h));
+
 		max = glm::ivec2((int)ceilf(0.5f * (bb.max.x + 1.0f) * (float)w),
-						 (int)ceilf(0.5f * (bb.max.y + 1.0f) * (float)h));
+			(int)ceilf(0.5f * (bb.max.y + 1.0f) * (float)h));
 
 		//printf("%f, %f\n", bb.min.x, bb.min.y);
 		for (int i = glm::max(0, min.y); i <= max.y; i++) {
@@ -809,7 +809,7 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 
 				// Convert to NDC
 				glm::vec2 ndc(2.0f * ((float)j / (float)w) - 1.0f,
-							  2.0f * ((float)i / (float)h) - 1.0f);
+					2.0f * ((float)i / (float)h) - 1.0f);
 
 				// Check if in triangle
 				glm::vec3 bary = calculateBarycentricCoordinate(tri, ndc);
@@ -849,35 +849,50 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 			a = glm::vec2(p.v[i].pos);
 			b = glm::vec2(p.v[(i + 1) % 3].pos);
 
-			glm::vec2 xydiff(a.x - b.x, a.y - b.y);
-			glm::normalize(xydiff);
-			float m;
-			if (xydiff.x == 0.0f) {
-				m = 1.0f;
-			}
-			else {
-				m = xydiff.y / xydiff.x;
-			}
-
 			glm::ivec2 ia = (0.5f * (a + 1.0f)) * glm::vec2((float)w, (float)h);
 			glm::ivec2 ib = (0.5f * (b + 1.0f)) * glm::vec2((float)w, (float)h);
 
-			int dist = ia.x - ib.x;
+
 			ipos[i] = (0.5f * (glm::vec2(p.v[i].pos) + 1.0f)) * glm::vec2((float)w, (float)h);
+
+			glm::vec2 xydiff(a.x - b.x, a.y - b.y);
+			glm::normalize(xydiff);
 
 			// Loop over pixels in line
 			glm::vec2 point = ipos[i];
 
-			if (fabsf(m) <= 1.0f) {
-				for (int j = 0; j < dist; j++) {
-					point.x -= 1.0f;
-					float newy = point.y - m;
-					if (newy < 0.0f || newy >= h) { 
-					}
-					else {
-						point.y = newy;
+			float m;
+			if (xydiff.y > xydiff.x || xydiff.x == 0.0f) {
+				m = xydiff.x / xydiff.y;
+				if (fabsf(m) <= 1.0f) {
+					int dist = ia.y - ib.y;
+					for (int j = 0; j < dist; j++) {
+						point.y -= 1.0f;
+						float newx = point.x - m;
+						if (newx < 0.0f || newx >= w) {
+						}
+						else {
+							point.x = newx;
 
-						fragmentbuffer[(int)point.x + (int)point.y * w].color = glm::vec3((float)j / (float)dist, .5f, .0f);
+							fragmentbuffer[(int)point.x + (int)point.y * w].color = glm::vec3((float)j / (float)dist, .5f, .0f);
+						}
+					}
+				}
+			}
+			else {
+				m = xydiff.y / xydiff.x;
+				if (fabsf(m) <= 1.0f) {
+					int dist = ia.x - ib.x;
+					for (int j = 0; j < dist; j++) {
+						point.x -= 1.0f;
+						float newy = point.y - m;
+						if (newy < 0.0f || newy >= h) {
+						}
+						else {
+							point.y = newy;
+
+							fragmentbuffer[(int)point.x + (int)point.y * w].color = glm::vec3((float)j / (float)dist, .5f, .0f);
+						}
 					}
 				}
 			}
