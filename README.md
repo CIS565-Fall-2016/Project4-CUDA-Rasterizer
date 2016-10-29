@@ -13,7 +13,7 @@ CUDA Rasterizer
   * Primitive assembly
   * Rasterization
   * Depth test
-  * Fragment shader
+  * Fragment shader (with lambert lighting)
   * Fragment-to-depth-buffer writing (with atomics for race avoidance).
   * A depth buffer for storing and depth testing fragments. 
 * UV texture mapping with bilinear texture filtering and perspective correct texture coordinates
@@ -55,6 +55,10 @@ Cow | Di|Engine | Buggy| Flower with Lines
 ![](imgs/cow1.gif) | ![](imgs/di1.gif) |![](imgs/engine1.gif) | ![](imgs/buggy1.gif)  | ![](imgs/flower.gif)
 
 # Analysis
+
+Pipeline Timing(ms) - VC | Pipeline Timing(ms) - Cow |Pipeline Timing(ms) - Box
+:-------------------------:|:-------------------------:  |:-------------------------:
+![](imgs/ana1.JPG) | ![](imgs/ana2.JPG) |![](imgs/ana3.JPG)
 
 
 #PS: looking for models: just we & just tank

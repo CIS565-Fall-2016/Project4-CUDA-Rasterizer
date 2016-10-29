@@ -12,6 +12,8 @@
 #include "common.h"
 #include <thrust/random/linear_congruential_engine.h>
 #include <thrust/random/uniform_real_distribution.h>
+#include <iostream>
+#include <fstream>
 #define USETEXTURE 1
 #define USELIGHT 1 && USETEXTURE
 #define USEBILINFILTER 1 && USETEXTURE
@@ -20,6 +22,9 @@
 #define USELINES 1  && 1-USETEXTURE
 #define USEPOINTS 0 && 1-USETEXTURE
 #define SPARSITY 20 //sparsity of point cloud (if on)
+#define DOTIMING 1
+ 
+
 /**
 * Kernel that writes the image to the OpenGL PBO directly.
 */
@@ -860,6 +865,29 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 //
 //}
 static int iter = 0;
+static cudaEvent_t start_G, stop_G;  
+float totalmilliseconds[6] = { 0, 0, 0, 0, 0,0 }; float milliseconds_;
+void startProfiling(cudaEvent_t * start_G, cudaEvent_t * stop_G){
+	cudaEventCreate(start_G);
+	cudaEventCreate(stop_G);
+	cudaEventRecord(*start_G);
+}
+void endProfiling(cudaEvent_t * start_G, cudaEvent_t * stop_G, float &milliseconds,int id){
+	cudaEventRecord(*stop_G);
+	cudaEventSynchronize(*stop_G);
+	cudaEventElapsedTime(&milliseconds, *start_G, *stop_G); 
+	totalmilliseconds[id-1] += milliseconds;
+	cudaEventDestroy(*start_G);
+	cudaEventDestroy(*stop_G);
+
+}
+void writeTime(char * name, const float & milliseconds){
+	std::ofstream filename;
+	filename.open(name, std::ios::app);
+	filename << milliseconds << "\n";
+	filename.close();
+}
+
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
 	iter++;
 	int sideLength2d = 8;
@@ -884,9 +912,17 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 			for (; p != pEnd; ++p) {
 				dim3 numBlocksForVertices((p->numVertices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 				dim3 numBlocksForIndices((p->numIndices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-
+#if DOTIMING
+				startProfiling(&start_G, &stop_G);
+#endif
 				_vertexTransformAndAssembly << < numBlocksForVertices, numThreadsPerBlock >> >(p->numVertices, *p, MVP, MV, MV_normal, width, height);
 				checkCUDAError("Vertex Processing");
+#if DOTIMING
+				endProfiling(&start_G, &stop_G, milliseconds_, 1);
+#endif
+#if DOTIMING
+				startProfiling(&start_G, &stop_G);
+#endif
 				cudaDeviceSynchronize();
 				_primitiveAssembly << < numBlocksForIndices, numThreadsPerBlock >> >
 					(p->numIndices,
@@ -894,7 +930,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 					dev_primitives,
 					*p);
 				checkCUDAError("Primitive Assembly");
-
+#if DOTIMING
+				endProfiling(&start_G, &stop_G, milliseconds_, 2);
+#endif
 				curPrimitiveBeginId += p->numPrimitives;
 			}
 		}
@@ -902,23 +940,52 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
 
+
+#if DOTIMING
+	startProfiling(&start_G, &stop_G);
+#endif
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);  // what if rasterizer change depth, need to do depth test after rasterizer
-
+#if DOTIMING
+	endProfiling(&start_G, &stop_G, milliseconds_, 3);
+#endif
 	// TODO: rasterize 
 	dim3 numBlocksPrims((totalNumPrimitives + blockSize - 1) / blockSize);
-	int randomnum = std::rand();
+	printf("totalNumPrimitives %d\n", totalNumPrimitives);
+#if DOTIMING
+	startProfiling(&start_G, &stop_G);
+#endif
 	kernRasterize << <numBlocksPrims, blockSize >> >(totalNumPrimitives, dev_primitives, dev_depth, width, height, dev_fragmentBuffer, iter);
 	checkCUDAError("rasterize wrong");
-
+#if DOTIMING
+	endProfiling(&start_G, &stop_G, milliseconds_, 4);
+#endif
+#if DOTIMING
+	startProfiling(&start_G, &stop_G);
+#endif
 #if USETEXTURE==1
 	kernTextureMap << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer);
 	checkCUDAError("textur error");
 #endif
-
+#if DOTIMING
+	endProfiling(&start_G, &stop_G, milliseconds_, 5);
+#endif
+#if DOTIMING
+	startProfiling(&start_G, &stop_G);
+#endif
 	// Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
 	checkCUDAError("fragment shader");
+#if DOTIMING
+	endProfiling(&start_G, &stop_G, milliseconds_, 6);
+#endif
+
+	writeTime("vertexTransformAndAssembly.txt", totalmilliseconds[0]);
+	writeTime("primitiveAssembly.txt", totalmilliseconds[1]);
+	writeTime("initDepth.txt", totalmilliseconds[2]);
+	writeTime("kernRasterize.txt", totalmilliseconds[3]);
+	writeTime("kernTextureMap.txt", totalmilliseconds[4]);
+	writeTime("render.txt", totalmilliseconds[5]);
 	// Copy framebuffer into OpenGL buffer for OpenGL previewing
 	sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, width, height, dev_framebuffer);
 	checkCUDAError("copy render result to pbo");
