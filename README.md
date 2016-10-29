@@ -154,19 +154,24 @@ Flower with backface culling        | Flower with backface culling
 
 # Renders
 
-|   |   | Triangle count | Source | 
-|---|---|---|---|
-| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
-| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
-| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
-| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
-| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
-| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
-| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
-| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+### Models
 
-Renders of normal and depth attributes:
+| [Duck](gltfs/duck/duck.gltf) | [Wolf](gltfs/wolf/wolf.gltf) | [Octocat](gltfs/octocat/octocat.gltf) |
+|---|---|---|
+|4212 tris | 18342 tris | 15708 tris |
+|![](renders/duck.png) | ![](renders/wolf.png) | ![](renders/octocat.png) |  
+
+| [Centaur](gltfs/cent/cent.gltf) | [Cesium Milk Truck](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) | [flower](gltfs/flower/flower.gltf) |
+|---|---|---|
+| 34670 tris | 3624 tris | 640 tris | 
+| ![](renders/centaur.png) | ![](renders/truck.png) |  ![](renders/flower_800_800.png) | 
+
+|[cow](gltfs/cow/cow.gltf) | [gltf](gltfs/head/head.gltf) | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+|---|---|---|
+| 5804 tris | 17684 tris | 121496 tris | 
+![](renders/cow.png) | ![](renders/head_zoomed_in.png) | ![](renders/engine.png) | 
+
+### Renders of normal and depth attributes:
 
 Diffuse        | Normal | Depth |
 :-------------------------:|:-------------------------:|:-------------------------:
@@ -176,11 +181,9 @@ Diffuse        | Normal | Depth |
 
 When `float` and `int` conversion goes wrong...
 
-![](renders/bloopers/blooper_checkerboard.png)
-
-![](renders/bloopers/blooper_duck0.PNG)
-
-![](renders/bloopers/blooper_duck1.png)
+| | | |
+|---|---|---|
+|![](renders/bloopers/blooper_checkerboard.png) | ![](renders/bloopers/blooper_duck0.PNG) | ![](renders/bloopers/blooper_duck1.png)|
 
 When your ghost friend won't stop staring at you :-)
 
