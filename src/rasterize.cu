@@ -21,8 +21,8 @@
 
 #define BLOCK_WIDTH 16
 
-//#define TRI
-#define LINE
+#define TRI
+//#define LINE
 //#define POINT
 
 namespace {
@@ -181,7 +181,7 @@ void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuf
 
 		}
 
-		framebuffer[index] = fragmentBuffer[index].color;// *diffuse + specular;
+		framebuffer[index] = fragmentBuffer[index].color *diffuse + specular;
     }
 }
 
@@ -215,11 +215,11 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 			for (int j = -5; j <= 5; j++) {
 				int neigh;
 				if ((local_x + i) < 0 || (local_x + i) >= BLOCK_WIDTH ||
-					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH) {
+					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH || true) {
 					// Can't use shared memory
 
 					//num_global++;
-					continue;
+					//continue;
 					neigh = x + i + ((y + j) * w);
 					if (neigh > 0 && (x + i) < w && (y + j) < h) {
 						final_color += framebuffer_in[neigh];
@@ -1007,7 +1007,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaEventRecord(effects_start);
 	
 	// Blur
-	//blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
+	blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
 
 	cudaEventRecord(effects_stop);
 	cudaEventSynchronize(effects_stop);
@@ -1018,7 +1018,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
 
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_preeffectbuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
 }
 
