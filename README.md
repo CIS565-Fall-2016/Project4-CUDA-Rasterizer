@@ -12,6 +12,7 @@ CUDA Rasterizer
 For this project we implemented a graphics rasterizer. Like path-tracing, rasterization is a method for converting a specification of points in 3d space into a 2d image. Whereas a path-tracer simulates the movement of light rays through space, a rasterizer uses matrix transforms to project 3d objectives onto the screen. Also, instead of representing objects as Platonic solids as in the path tracer, a rasterizer decomposes objects into smaller "primitives", usually triangles.
 
 Our basic pipeline is as follows:
+
  Vertex Assembly -> Vertex Transform -> Primitive Assembly -> Rasterization -> Fragment Shading
 
 It's worth noting that while most rasterizer pipelines look something like this, there are variations from one to the next.
@@ -96,6 +97,8 @@ Without:
 ![alt text](https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/checkerboardAA1.PNG)
 
 Like texture mapping, antialiasing comes with a performance cost -- probably an even more significant one, actually. In general runtime scales with the number of samples taken per pixel as demonstrated by this chart:
+
+![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/antialiasing-profile.PNG)
 
 Two major memory optimizations include:
 1. Only sampling at edges, this the effects of aliasing are really only observable there.
