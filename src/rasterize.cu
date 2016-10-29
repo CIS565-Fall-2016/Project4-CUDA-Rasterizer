@@ -21,8 +21,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #define TEXTURE 1
-#define BILINEAR 0
-#define CULLING 1
+#define BILINEAR 1
+#define CULLING 0
 #define NPR 1
 
 #define RADIUS 4
@@ -947,7 +947,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	auto dev_thrust_primitives = thrust::device_pointer_cast(dev_primitives);
 	numPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numPrimitives, backfacing()) - dev_thrust_primitives;
 #endif
-
+	printf("%d\n", numPrimitives);
 	// TODO: rasterize
 	dim3 numThreadsPerBlock(128);
 	dim3 numBlocksForPrimitives((numPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
