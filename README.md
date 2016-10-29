@@ -34,6 +34,7 @@ This is a rasterizer running on the GPU using CUDA.
   * C to enable / disable backface culling.
   * T to enable / disable performance testing.
   * B to enable / disable axis aligned bounding box optimization.
+  * X to enable / disable cheap culling.  This is faster but not advised as it can lead to artifacts in renders.
   * IMPORTANT NOTE:  To enable supersampling, you must change line 22 in main.cpp to this and recompile:  
     * static bool supersample = true;  
 
