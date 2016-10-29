@@ -20,7 +20,7 @@
 #include "util/utilityCore.hpp"
 
 
-#define TRIANGLES 0
+#define TRIANGLES 1
 
 #define BILINEAR 1
 #define PERSPECTIVE 1
@@ -28,8 +28,10 @@
 #define LAMBERT 1
 
 #define POINT 0
-#define LINE 1
+#define LINE 0
 
+#define SSAA 2
+ 
 
 namespace {
 
@@ -130,6 +132,8 @@ static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2Primitiv
 static int width = 0;
 static int height = 0;
 static int lightNum = 1;
+static int originalWidth = 0;
+static int originalHeight = 0;
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
@@ -143,16 +147,26 @@ static Light *dev_light = NULL; // come on!
  * Kernel that writes the image to the OpenGL PBO directly.
  */
 __global__ 
-void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
+void sendImageToPBO(uchar4 *pbo, int w, int h, int ssaa, glm::vec3 *image) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
+//	int newx = ssaa * x;
+//	int newy = ssaa * y;
 
     if (x < w && y < h) {
-        glm::vec3 color;
-        color.x = glm::clamp(image[index].x, 0.0f, 1.0f) * 255.0;
-        color.y = glm::clamp(image[index].y, 0.0f, 1.0f) * 255.0;
-        color.z = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
+		glm::vec3 color(0.f);
+		for (int i = 0; i < ssaa; i++) {
+			for (int j = 0; j < ssaa; j++) {
+				color.x += glm::clamp(image[x * ssaa + i + (y * ssaa + j) * (ssaa * w)].x, 0.0f, 1.0f) * 255.0;
+				color.y += glm::clamp(image[x * ssaa + i + (y *ssaa + j)  * (ssaa * w)].y, 0.0f, 1.0f) * 255.0;
+				color.z += glm::clamp(image[x * ssaa + i + (y *ssaa + j)  * (ssaa * w)].z, 0.0f, 1.0f) * 255.0;
+			}
+		}
+		color /= float(ssaa * ssaa);
+     //   color.x = glm::clamp(image[index].x, 0.0f, 1.0f) * 255.0;
+     //   color.y = glm::clamp(image[index].y, 0.0f, 1.0f) * 255.0;
+    //    color.z = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
         // Each thread writes one pixel location in the texture (textel)
         pbo[index].w = 0;
         pbo[index].x = color.x;
@@ -287,15 +301,25 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
  * Called once at the beginning of the program to allocate memory.
  */
 void rasterizeInit(int w, int h) {
-    width = w;
-    height = h;
+	originalWidth = w;
+	originalHeight = h;
+    width = SSAA * w;
+	height = SSAA * h;
+
+	/*width = int(1.2 * w);
+	height = int(1.2 * h);*/
+	
+	cudaFree(dev_framebuffer);
+	//cudaMalloc(&dev_framebuffer, originalWidth * originalHeight * sizeof(glm::vec3));
+	//cudaMemset(dev_framebuffer, 0, originalWidth * originalHeight * sizeof(glm::vec3));
+	cudaMalloc(&dev_framebuffer, width * height * sizeof(glm::vec3));
+	cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+
+
 	cudaFree(dev_fragmentBuffer);
 	cudaMalloc(&dev_fragmentBuffer, width * height * sizeof(Fragment));
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-    cudaFree(dev_framebuffer);
-    cudaMalloc(&dev_framebuffer,  width * height * sizeof(glm::vec3));
-    cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
-    
+       
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
 
@@ -907,56 +931,56 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 		// using Bary Coordinates to test whether inside a given triangle or not
 		glm::vec3 curPixelBaryCoord;
 		
-		for (int x = Xmin; x <= Xmax; x++) {  //similar to last year cg assignment, traversal 
-			for (int y = Ymin; y <= Ymax; y++) {
-				glm::vec2 curPixel(x, y);
-				curPixelBaryCoord = calculateBarycentricCoordinate(tri, curPixel);
-				if (isBarycentricCoordInBounds(curPixelBaryCoord) == true) {  //test if this coordinate inside the primitive 
-					pixelIndex = x + y * width; // pixel index
-					depth = -getZAtCoordinate(curPixelBaryCoord, tri) * INT_MAX; // ok we get depth
-					atomicMin(&dev_depth[pixelIndex], depth);  // ok we got the front one
-					if (dev_depth[pixelIndex] == depth) // to test if this is the right candidate
-					{
-						//interpolate any values in triangle’s vertices
-						//refer to last year Adam's slides! Super useful hahaha for triangle
-						glm::vec3 eyePos = curPixelBaryCoord.x * triEyePos[0] + curPixelBaryCoord.y * triEyePos[1] + curPixelBaryCoord.z * triEyePos[2];
-						dev_fragmentBuffer[pixelIndex].eyePos = eyePos;
-						glm::vec3 eyeNor = glm::normalize(curPixelBaryCoord.x * triEyeNor[0] + curPixelBaryCoord.y * triEyeNor[1] + curPixelBaryCoord.z * triEyeNor[2]);
-						dev_fragmentBuffer[pixelIndex].eyeNor = eyeNor;
-						glm::vec2 texcoord0 = curPixelBaryCoord.x * triTexcoord0[0] + curPixelBaryCoord.y * triTexcoord0[1] + curPixelBaryCoord.z * triTexcoord0[2];
-						dev_fragmentBuffer[pixelIndex].dev_diffuseTex = dev_primitives[idx].dev_diffuseTex;
-						dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
-						dev_fragmentBuffer[pixelIndex].diffuseTexWidth = dev_primitives[idx].diffuseTexWidth;
-						dev_fragmentBuffer[pixelIndex].diffuseTexHeight = dev_primitives[idx].diffuseTexHeight;
-						dev_fragmentBuffer[pixelIndex].color = color; // test
+		    for (int x = Xmin; x <= Xmax; x++) {  //similar to last year cg assignment, traversal 
+		    	for (int y = Ymin; y <= Ymax; y++) {
+						glm::vec2 curPixel(x, y);
+						curPixelBaryCoord = calculateBarycentricCoordinate(tri, curPixel);
+						if (isBarycentricCoordInBounds(curPixelBaryCoord) == true) {  //test if this coordinate inside the primitive 
+							pixelIndex = x + y * width; // pixel index
+							depth = -getZAtCoordinate(curPixelBaryCoord, tri) * INT_MAX; // ok we get depth
+							atomicMin(&dev_depth[pixelIndex], depth);  // ok we got the front one
+							if (dev_depth[pixelIndex] == depth) // to test if this is the right candidate
+							{
+								//interpolate any values in triangle’s vertices
+								//refer to last year Adam's slides! Super useful hahaha for triangle
+								glm::vec3 eyePos = curPixelBaryCoord.x * triEyePos[0] + curPixelBaryCoord.y * triEyePos[1] + curPixelBaryCoord.z * triEyePos[2];
+								dev_fragmentBuffer[pixelIndex].eyePos = eyePos;
+								glm::vec3 eyeNor = glm::normalize(curPixelBaryCoord.x * triEyeNor[0] + curPixelBaryCoord.y * triEyeNor[1] + curPixelBaryCoord.z * triEyeNor[2]);
+								dev_fragmentBuffer[pixelIndex].eyeNor = eyeNor;
+								glm::vec2 texcoord0 = curPixelBaryCoord.x * triTexcoord0[0] + curPixelBaryCoord.y * triTexcoord0[1] + curPixelBaryCoord.z * triTexcoord0[2];
+								dev_fragmentBuffer[pixelIndex].dev_diffuseTex = dev_primitives[idx].dev_diffuseTex;
+								dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
+								dev_fragmentBuffer[pixelIndex].diffuseTexWidth = dev_primitives[idx].diffuseTexWidth;
+								dev_fragmentBuffer[pixelIndex].diffuseTexHeight = dev_primitives[idx].diffuseTexHeight;
+								dev_fragmentBuffer[pixelIndex].color = color; // test
 
-		//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
-		//https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
+								//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
+								//https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
 
 #if PERSPECTIVE
 
-						float demon[3] = { 1.f / triEyePos[0].z, 1.f / triEyePos[1].z, 1.f / triEyePos[2].z };
-						glm::vec3 uDivZ = glm::vec3(curPixelBaryCoord.x * demon[0], curPixelBaryCoord.y * demon[1], curPixelBaryCoord.z * demon[2]);
-						float depth = (1.0f / (uDivZ.x + uDivZ.y + uDivZ.z));
-						glm::vec2 persTexture = uDivZ.x * triTexcoord0[0] + uDivZ.y * triTexcoord0[1] + uDivZ.z * triTexcoord0[2];
-						dev_fragmentBuffer[pixelIndex].texcoord0 = persTexture * depth;
+								float demon[3] = { 1.f / triEyePos[0].z, 1.f / triEyePos[1].z, 1.f / triEyePos[2].z };
+								glm::vec3 uDivZ = glm::vec3(curPixelBaryCoord.x * demon[0], curPixelBaryCoord.y * demon[1], curPixelBaryCoord.z * demon[2]);
+								float depth = (1.0f / (uDivZ.x + uDivZ.y + uDivZ.z));
+								glm::vec2 persTexture = uDivZ.x * triTexcoord0[0] + uDivZ.y * triTexcoord0[1] + uDivZ.z * triTexcoord0[2];
+								dev_fragmentBuffer[pixelIndex].texcoord0 = persTexture * depth;
 
-						//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
-						//  triTexcoord0[0] /= tri[0].z; 
-						//	triTexcoord0[1] /= tri[1].z;
-						//	triTexcoord0[2] /= tri[2].z;
-						//	glm::vec2 demon[3] = { triTexcoord0[0], triTexcoord0[1], triTexcoord0[2] };
-						//	tri[0].z = 1.f / tri[0].z;
-						//	tri[1].z = 1.f / tri[1].z;
-						//	tri[2].z = 1.f / tri[2].z;
+								//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
+								//  triTexcoord0[0] /= tri[0].z; 
+								//	triTexcoord0[1] /= tri[1].z;
+								//	triTexcoord0[2] /= tri[2].z;
+								//	glm::vec2 demon[3] = { triTexcoord0[0], triTexcoord0[1], triTexcoord0[2] };
+								//	tri[0].z = 1.f / tri[0].z;
+								//	tri[1].z = 1.f / tri[1].z;
+								//	tri[2].z = 1.f / tri[2].z;
 
 #else
-						dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
+								dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
 #endif
+							}
+						}
 					}
-	            }
-             }
-		  }
+				}
 #elif POINT
 		int prob = 0;
 	//	if (dev_primitives[idx].primitiveType == Triangle) {
@@ -1045,9 +1069,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
     // Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+	//render << <blockCount2d, blockSize2d >> >(originalWidth, originalHeight, dev_fragmentBuffer, dev_framebuffer);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
+    //sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
+	sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, originalWidth, originalHeight, SSAA, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
 }
 
