@@ -20,6 +20,11 @@
 #include <chrono>
 
 #define BLOCK_WIDTH 16
+
+//#define TRI
+#define LINE
+//#define POINT
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -176,7 +181,7 @@ void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuf
 
 		}
 
-		framebuffer[index] = fragmentBuffer[index].color *diffuse + specular;
+		framebuffer[index] = fragmentBuffer[index].color;// *diffuse + specular;
     }
 }
 
@@ -187,9 +192,10 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 
 	int index = x + (y * w);
 
+	// Initialize shared memory
+	__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
+
 	if (x < w && y < h) {
-		// Initialize shared memory
-		__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
 		
 		int local_x = x % BLOCK_WIDTH;
 		int local_y = y % BLOCK_WIDTH;
@@ -224,6 +230,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 
 					//num_shared++;
 					final_color += neighbors[local_index + i + j * BLOCK_WIDTH];
+
 				}
 			}
 		}
@@ -779,7 +786,8 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
 	if (pid < t) {
 		Primitive p = primitives[pid];
-		
+
+#ifdef TRI		
 		glm::vec3 tri[3];
 		tri[0] = glm::vec3(p.v[0].pos);
 		tri[1] = glm::vec3(p.v[1].pos);
@@ -794,7 +802,7 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 	
 		max = glm::ivec2((int)ceilf(0.5f * (bb.max.x + 1.0f) * (float)w),
 						 (int)ceilf(0.5f * (bb.max.y + 1.0f) * (float)h));
-	
+
 		//printf("%f, %f\n", bb.min.x, bb.min.y);
 		for (int i = glm::max(0, min.y); i <= max.y; i++) {
 			for (int j = glm::max(0, min.x); j <= max.x; j++) {
@@ -832,6 +840,63 @@ void _rasterize_scanlines(int t, int w, int h, int * mutex, Primitive* primitive
 				}	
 			}
 		}
+#endif
+
+#ifdef LINE
+		glm::vec2 ipos[3];
+		for (int i = 0; i < 3; i++) {
+			glm::vec2 a, b;
+			if (p.v[i].pos.x > p.v[(i + 1) % 3].pos.x) {
+				a = glm::vec2(p.v[i].pos);
+				b = glm::vec2(p.v[(i + 1) % 3].pos);
+			}
+			else {
+				a = glm::vec2(p.v[(i + 1) % 3].pos);
+				b = glm::vec2(p.v[i].pos);
+			}
+			glm::vec2 xydiff(a.x - b.x, a.y - b.y);
+			glm::normalize(xydiff);
+			float m;
+			if (xydiff.x == 0.0f) {
+				m = 1.0f;
+			}
+			else {
+				m = xydiff.y / xydiff.x;
+			}
+
+			glm::ivec2 ia = (0.5f * (a + 1.0f)) * glm::vec2((float)w, (float)h);
+			glm::ivec2 ib = (0.5f * (b + 1.0f)) * glm::vec2((float)w, (float)h);
+
+			int dist = ia.x - ib.x;
+			ipos[i] = (0.5f * (glm::vec2(p.v[i].pos) + 1.0f)) * glm::vec2((float)w, (float)h);
+
+			// Loop over pixels in line
+			glm::vec2 point = ipos[i];
+
+			if (fabsf(m) <= 1.0f) {
+				for (int j = 0; j < dist; j++) {
+					point.x += 1.0f;
+					float newy = point.y + m;
+					if (newy < 0.0f || newy >= h) { 
+					}
+					else {
+						point.y += m;
+
+						fragmentbuffer[(int)point.x + (int)point.y * w].color = glm::vec3((float)j / (float)dist, .5f, .0f);
+					}
+				}
+			}
+		}
+
+#endif
+
+#ifdef POINT
+		glm::ivec2 ipos[3];
+		for (int i = 0; i < 3; i++) {
+			ipos[i] = glm::round((0.5f * (glm::vec2(p.v[i].pos) + 1.0f)) * glm::vec2((float)w, (float)h));
+			fragmentbuffer[ipos[i].x + ipos[i].y * w].color = glm::vec3(1.0f, 1.0f, 1.0f);
+		}
+#endif
 	}
 }
 /**
@@ -932,7 +997,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaEventRecord(effects_start);
 	
 	// Blur
-	blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
+	//blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
 
 	cudaEventRecord(effects_stop);
 	cudaEventSynchronize(effects_stop);
@@ -943,7 +1008,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
 
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_preeffectbuffer);
     checkCUDAError("copy render result to pbo");
 }
 
