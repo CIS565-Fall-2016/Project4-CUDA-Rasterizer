@@ -25,6 +25,7 @@
 #define BILINEAR 1
 #define PERSPECTIVE 1
 #define BLINNPHONG 0
+#define LAMBERT 1
 
 #define POINT 0
 #define LINE 1
@@ -258,25 +259,27 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			//framebuffer[index] = fragmentBuffer[index].color;
 		}
 #endif
-		glm::vec3 returnedColorWithoutSpecular = diffuseColor;
+
+		glm::vec3 returnedColor = diffuseColor;
 
 #if BLINNPHONG	
 		glm::vec3 H = glm::normalize(lightDir + curToEye);
 //		specularCoef = pow(glm::max(0.f, glm::dot(curToEye, glm::reflect(-lightDir, curNor))), matShiness)
 		specularCoef = 0.6 * pow(glm::max(0.f, glm::dot(H, curNor)), matShiness);
-		glm::vec3 returnedColorWithSpecular = ambientColor * ambientCoef * lightIntensity + lightIntensity * (diffuseCoef * cosangle * diffuseColor + specularCoef * specularColor);//* attenuation;
+		returnedColor = ambientColor * ambientCoef * lightIntensity + lightIntensity * (diffuseCoef * cosangle * diffuseColor + specularCoef * specularColor);//* attenuation;
 
-#else
+#elif LAMBERT
+		returnedColor = diffuseColor * cosangle;
 #endif
-		framebuffer[index] = returnedColorWithoutSpecular;
+		framebuffer[index] = returnedColor;
 	//	framebuffer[index] = returnedColorWithSpecular;
 	}
 
 #elif POINT
-	framebuffer[index] = curFrag.color;
+	   framebuffer[index] = curFrag.color;
 
 #elif LINE
-	framebuffer[index] = curFrag.color;
+	   framebuffer[index] = curFrag.color;
 #endif
  }
 
