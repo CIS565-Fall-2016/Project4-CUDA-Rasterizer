@@ -9,6 +9,7 @@
 
 
 #include "main.hpp"
+#include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_LOADER_IMPLEMENTATION
@@ -120,7 +121,13 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
+
+	using micro = std::chrono::microseconds;
+	  auto start = std::chrono::high_resolution_clock::now();
 	rasterize(dptr, MVP, MV, MV_normal);
+	  auto finish = std::chrono::high_resolution_clock::now();
+	  std::cout
+		  << std::chrono::duration_cast<micro>(finish - start).count() << endl;
     cudaGLUnmapBufferObject(pbo);
 
     frame++;

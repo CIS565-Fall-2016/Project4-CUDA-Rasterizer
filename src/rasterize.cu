@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cuda.h>
+#include <chrono>
 #include <cuda_runtime.h>
 #include <thrust/random.h>
 #include <util/checkCUDAError.h>
@@ -889,6 +890,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   cudaMemset(dev_framebuffer, 0, width * height * sizeof(dev_framebuffer[0]));
 
   // TODO: rasterize
+
   dim3 blockSize = totalNumPrimitives / numThreadsPerBlock.x + 1;
   _rasterize<< <blockSize, numThreadsPerBlock>> >
     (totalNumPrimitives, height, width,
