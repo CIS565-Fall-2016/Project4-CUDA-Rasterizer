@@ -1,8 +1,6 @@
 CUDA Rasterizer
 ===============
 
-[CLICK ME FOR INSTRUCTION OF THIS PROJECT](./INSTRUCTION.md)
-
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * Ethan Brooks
