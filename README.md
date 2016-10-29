@@ -23,7 +23,7 @@ Use CUDA to implement a simplified rasterized graphics pipeline, similar to the 
 * UV texture mapping with bilinear texture filtering 
 * UV texture mapping with perspective correct texture coordinates
 * Support rasterizing Triangles, Lines, Points
-
+* Super Sampling Anti-Aliasing (SSAA)
 
 ## Project Summary
 
