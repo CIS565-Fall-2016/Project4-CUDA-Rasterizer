@@ -22,6 +22,17 @@ Video of the rasterizer in action can be found [here](https://youtu.be/_Y-9eAgIC
 
 
 # Textures
+I implemented perspective-correct UV texturing for diffuse coloring, using CUDA's texture memory functionality.
 ![DuckTex](renders/duck-texture.png "Duck Texture")
-![DuckTex](renders/truck-nossao.png "Duck Texture")
+![Truck](renders/truck-nossao.png "Duck Texture")
 
+# SSAO
+I also implemented SSAO, both using shared memory and without.
+![Truck SSAO only](renders/truck-ssao-only.png "Duck Texture")
+![Truck SSAO](renders/truck-ssao.png "Duck Texture")
+
+# Performance
+![notex nosm](renders/plt_loc_notex.png "Duck Texture")
+![tex nosm](renders/plt_loc_tex.png "Duck Texture")
+![tex sm](renders/plt_sm_tex.png "Duck Texture")
+Interestingly, the
