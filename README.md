@@ -46,7 +46,7 @@ CUDA Rasterizer
 | Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
 | Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
 | Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders/engine.png) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
 
 Renders of normal and depth attributes:
 
