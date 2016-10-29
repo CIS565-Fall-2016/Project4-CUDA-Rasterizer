@@ -26,6 +26,7 @@ The following header flags can be found in `rasterize.cu`:
 - `#define BILINEAR_FILTERING`: Uncomment to enable bilinear filtering
 - `#define NOT_USE_TEXTURE`: Uncomment if the model doesn't have a texture file (cow, centaur, 2 cylinder engine, wolf, octocat, flower)
 - `#define USE_K_BUFFER`: Uncomment if using independent order transparency with k-buffer
+- `#define SHARED_MEMORY_MATERIALS`: Uncomment to use shared memory for materials
 
 (not working, please ignore)
 - ~~`#define BACKFACE_CULLING`~~
@@ -34,6 +35,7 @@ The following header flags can be found in `main.cpp`:
 - `#define USE_CENTAUR_MODEL`: Uncomment if using the `cent.gltf` model
 - `#define USE_HEAD_MODEL`: Uncomment if using the `head.gltf` model
 - `#define USE_ENGINE_MODEL`: Uncomment if using the `2_cylinder_engine.gltf` model
+- `#define USE_TURNTABLE`: Uncomment to rotate model on a turntable
 
 ## UV Texture Mapping
 ### 1. Perspective correct
@@ -69,6 +71,8 @@ k-buffer **ON**        | k-buffer **OFF**
 :-------------------------:|:-------------------------:
 ![](renders/videos/truck_kbuffer.gif)|![](renders/videos/truck.gif)
 ![](renders/videos/engine_kbuffer.gif)|![](renders/videos/engine.gif)
+
+To make sure that colors from overlapping fragments are accumulated correctly, `atomicAdd` is used to synchronize across all threads that attempt to accumulate to the `dev_depthAccum` buffer.
 
 ---------------
 
@@ -106,7 +110,7 @@ As we can see, the `_rasterize` kernel increases significantly in kernel time be
 
 _Profile is done by enabling each feature one by one_
 
-        | Scene used
+|        | Scene used
 :-------------------------:|:-------------------------:
 ![](renders/analysis/head_20s_kernel_time_with_features.png)|![](renders/videos/head.gif)
 
@@ -118,6 +122,26 @@ As expected, bilinear filtering and k-buffer occupy more device time. However, t
 
 `_rasterize` and (interestingly) `_vertexTransformAndAssembly` take up a large number of registers, 112 and 95, respectively. This significantly severes the ability for GPU scheduler to optimize the number of active blocks per kernel launch. 
 
+### Shared memory for materials 
+
+To optimize for `render` kernel global memory read from materials list, this data is copied over to __shared__ memory. In the beginning of the `render` kernel call, threads within the same block will copy over the materials data from globabal memory to __shared__ memory. A CUDA `__syncthreads()` is used to make sure this shared data is initialized properly before used.
+
+Let's take a look at the kernel analysis for `render`:
+
+_The following uses three different scene with varying number of materials and ran for 20,000ms each_
+
+Scene used  | Number of materials
+:-------------------------:|:-------------------------:
+![](renders/videos/duck.gif)| 1
+![](renders/videos/truck.gif)| 5
+![](renders/videos/engine.gif)| 115
+
+| Kernel time  | Occupancy
+:-------------------------:|:-------------------------:
+![](renders/analysis/shared_memory_materials_kernel_time.png)|![](renders/analysis/shared_memory_materials_occupancy.png)|
+
+Looks quite bad! It seems that having sharing memory isn't that great at all. The occupancy for active warps are quite low. This is due to the fact that an additional step is required to transfer the materials data over from global so shared memory with a thread sync. 
+
 ----------------
 
 # Incomplete feature
@@ -127,6 +151,8 @@ Backface culling is implemented, but without stream compaction. I only include h
 Flower with backface culling        | Flower with backface culling
 :-------------------------:|:-------------------------:
 ![](renders/flower_bf_culling.png)|![](renders/flower_no_bf_culling.png)
+
+--------------------------------
 
 # Renders
 
@@ -162,6 +188,8 @@ When your ghost friend won't stop staring at you :-)
 
 ![](renders/videos/head_kbuffer.gif)
 
+--------------------------------
+
 # Device information
 
 ### General information for CUDA device
@@ -186,6 +214,8 @@ When your ghost friend won't stop staring at you :-)
 - Max registers per block: 65536
 - Max thread dimensions: [1024, 1024, 64]
 - Threads per block: 512
+
+--------------------------------
 
 ### Credits
 

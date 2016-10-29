@@ -19,7 +19,6 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <thrust/remove.h>
 #include <thrust/execution_policy.h>
-#include <minwindef.h>
 
 //#define RENDER_DEPTH_ONLY
 //#define RENDER_NORMAL_ONLY
@@ -27,6 +26,7 @@
 //#define BACKFACE_CULLING
 //#define NOT_USE_TEXTURE
 //#define USE_K_BUFFER
+//#define SHARED_MEMORY_MATERIALS
 
 	typedef unsigned short VertexIndex;
 	typedef glm::vec3 VertexAttributePosition;
@@ -131,6 +131,7 @@ static Primitive *dev_primitives = NULL;
 static Primitive* dev_culledPrimitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec4 *dev_framebuffer = NULL;
+static int totalNumMaterials = 0;
 static Material *dev_materials = NULL;
 
 static float * dev_depth = NULL;	
@@ -171,12 +172,27 @@ void render(
 	float* depth,
 	glm::vec4 *depthAccum, // k-buffer accumulate
 	float* depthRevealage, // k-buffer revealage
+	int numMaterials,
 	Material* materials
 	)
 {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
+
+#if defined(SHARED_MEMORY_MATERIALS)
+	// Materials copy has to be done here before any branching. 
+	// Making an assumption that we could have maximum 256 materials
+	__shared__ Material sh_materials[256];
+	int mId = threadIdx.x + threadIdx.y * blockDim.x;
+
+	// Doing a while loop here so every thread in a block can distribute work
+	while (mId < numMaterials) {
+		sh_materials[mId] = materials[mId];
+		mId += blockDim.x * blockDim.y;
+	}
+	__syncthreads(); // Must sync here otherwise some threads won't get the right materials
+#endif
 
     if (x < w && y < h) {
 
@@ -200,26 +216,49 @@ void render(
 				glm::vec3 viewDirection = glm::normalize(-fragmentBuffer[index].eyePos);
 				glm::vec3 halfDir = glm::normalize(lightDirection + viewDirection);
 				float specAngle = glm::clamp(glm::dot(halfDir, fragmentBuffer[index].eyeNor), 0.0f, 1.0f);
-				specular = glm::pow(specAngle, (float)materials[materialId].shininess);
+				specular = glm::pow(specAngle, 
+#if defined(SHARED_MEMORY_MATERIALS)
+					(float)sh_materials[materialId].shininess
+#else
+					(float)materials[materialId].shininess
+#endif				
+						);
 			}
 			glm::vec4 diffuse =
-#ifdef NOT_USE_TEXTURE			
-			materials[materialId].diffuse;
+#ifdef NOT_USE_TEXTURE		
+#if defined(SHARED_MEMORY_MATERIALS)			
+				sh_materials[materialId].diffuse;
+#else
+				materials[materialId].diffuse;
+#endif // End SHARED_MEMORY_MATERIALS
 			if (diffuse ==  glm::vec4(0, 0, 0, 1)) {
 				// Diffuse is black, adjust it brighter
 				diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 			}
 #else
 			fragmentBuffer[index].color;
-#endif
-			framebuffer[index] = materials[materialId].ambient * diffuse + lambertian * diffuse + specular * materials[materialId].specular;
+#endif // End NOT_USE_TEXTURE
+			framebuffer[index] =
+#if defined(SHARED_MEMORY_MATERIALS)
+				sh_materials[materialId].ambient *
+#else
+				materials[materialId].ambient *
+#endif // End SHARED_MEMORY_MATERIALS
+				diffuse +
+				lambertian * diffuse +
+				specular *
+#if defined(SHARED_MEMORY_MATERIALS)
+				sh_materials[materialId].specular;
+#else		
+				materials[materialId].specular;
+#endif // End SHARED_MEMORY_MATERIALS
 
 		} else {
 			framebuffer[index] = fragmentBuffer[index].color;
 		}
 
 #ifdef USE_K_BUFFER						
-		framebuffer[index] = glm::vec4(glm::vec3(depthAccum[index]) / glm::max(depthAccum[index].a, 0.00001f), 1.0f ) / 50.0f; // Divide by 50.0f here to tone down the transparency
+		framebuffer[index] = glm::vec4(glm::vec3(depthAccum[index]) / glm::max(depthAccum[index].a, 0.0001f), 1.0f - depthRevealage[index] ) / 50.0f; // Divide by 50.0f here to tone down the transparency
 
 #endif // USE_K_BUFFER
 
@@ -258,6 +297,10 @@ void rasterizeInit(int w, int h) {
 
 #ifdef USE_K_BUFFER
 	printf("USING K-BUFFER\n");
+#endif
+
+#ifdef SHARED_MEMORY_MATERIALS
+	printf("USING SHARED MEMORY FOR MATERIALS\n");
 #endif
 }
 
@@ -650,7 +693,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						if (mat.values.find("ambient") != mat.values.end()) {
 							auto amb = mat.values.at("ambient").number_array;
 							material.ambient = glm::vec4(amb.at(0), amb.at(1), amb.at(2), amb.at(3));
-
 						}
 						if (mat.values.find("emission") != mat.values.end()) {
 							auto em = mat.values.at("emission").number_array;
@@ -733,6 +775,8 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 	// 4. Malloc for dev_materials
 	{
 		cudaMalloc(&dev_materials, materials.size() * sizeof(Material));
+		totalNumMaterials = materials.size();
+		printf("Number of materials %d\n", totalNumMaterials);
 		cudaMemcpy(dev_materials, materials.data(), materials.size() * sizeof(Material), cudaMemcpyHostToDevice);
 	}
 
@@ -916,7 +960,7 @@ void _rasterize(
 #else
 					if (depth < depths[index]) {
 						fatomicMin(&depths[index], depth);
-#endif
+#endif // End USE_K_BUFFER
 
 						// Interpolate normal
 						glm::vec3 eyeSpaceNormals[3] = {
@@ -1095,7 +1139,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 
     // Copy depthbuffer colors into framebuffer
-	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, dev_depth, dev_depthAccum, dev_depthRevealage, dev_materials);
+	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer, dev_depth, dev_depthAccum, dev_depthRevealage, totalNumMaterials, dev_materials);
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);

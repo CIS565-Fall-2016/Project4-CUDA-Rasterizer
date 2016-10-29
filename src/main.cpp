@@ -17,6 +17,8 @@
 //#define USE_CENTAUR_MODEL
 //#define USE_HEAD_MODEL
 //#define USE_ENGINE_MODEL
+//#define USE_TURNTABLE
+#define USE_TURNTABLE
 
 //-------------------------------
 //-------------MAIN--------------
@@ -129,7 +131,12 @@ void runCuda() {
 #endif
 
 	auto now = std::chrono::system_clock::now();
-	float timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+	float timeElapsed 
+#ifdef USE_TURNTABLE	
+	= std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+#else
+	= 0;
+#endif
 	// turn table
 	glm::mat4 M =
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
