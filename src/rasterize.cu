@@ -132,8 +132,8 @@ static Fragment *dev_dsfragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 static glm::vec3 *dev_dsframebuffer = NULL;
 
-static glm::vec4 *dev_lightspos = NULL;
-static glm::vec4 *dev_lightscol = NULL;
+//static glm::vec4 *dev_lightspos = NULL;
+//static glm::vec4 *dev_lightscol = NULL;
 
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
@@ -260,13 +260,13 @@ void rasterizeInit(int w, int h, int cw, int ch) {
     cudaMalloc(&dev_dsframebuffer, cwidth * cheight * sizeof(glm::vec3));
     cudaMemset(dev_dsframebuffer, 0, cwidth * cheight * sizeof(glm::vec3));
 
-    cudaFree(dev_lightspos);
-    cudaMalloc(&dev_lightspos, numlights * sizeof(glm::vec4));
-    cudaMemset(dev_lightspos, 0, numlights * sizeof(glm::vec4));
+    //cudaFree(dev_lightspos);
+    //cudaMalloc(&dev_lightspos, numlights * sizeof(glm::vec4));
+    //cudaMemset(dev_lightspos, 0, numlights * sizeof(glm::vec4));
 
-    cudaFree(dev_lightscol);
-    cudaMalloc(&dev_lightscol, numlights * sizeof(glm::vec4));
-    cudaMemset(dev_lightscol, 0, numlights * sizeof(glm::vec4));
+    //cudaFree(dev_lightscol);
+    //cudaMalloc(&dev_lightscol, numlights * sizeof(glm::vec4));
+    //cudaMemset(dev_lightscol, 0, numlights * sizeof(glm::vec4));
 
     cudaFree(dev_depth);
     cudaMalloc(&dev_depth, width * height * sizeof(int));
