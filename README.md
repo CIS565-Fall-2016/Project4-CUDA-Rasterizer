@@ -35,14 +35,13 @@ CUDA Rasterizer
 
 
 Diffuse        | Normal | Depth |
-:-------------------------:|:-------------------------:
+:-------------------------:|:-------------------------:|:-------------------------:
 ![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
 
 # Features
 
-- [UV texture mapping](##UVTextureMapping)
-
-Added a new material struct. Passing by materials.
+- [UV texture mapping](## UV Texture Mapping)
+- [Order independent transparency using k-buffer](## Order independent transparency using k-buffer)
 
 # Flags
 
@@ -66,9 +65,9 @@ The following header flags can be found in `main.cpp`:
 
 |   |   | Triangle count | Source | 
 |---|---|---|---|
-| Cow | ![](render\cow.png) | 5804 | [gltfs](gltfs/cow/cow.gltf) |
+| Cow | ![](renders\cow.png) | 5804 | [gltfs](gltfs/cow/cow.gltf) |
 | Head | 17684 | [gltfs](gltfs/head/head.gltf) |
-|2 cylinder engine| 121496 | [gltfs](gltfs/2_cylinder_engine/2_cylinder_engine.gltf) |
+|2 cylinder engine| ![](renders\engine.png) | 121496 | [gltfs](gltfs/2_cylinder_engine/2_cylinder_engine.gltf) |
 
 ## UV Texture Mapping
 ### 1. Perspective correct
@@ -77,7 +76,7 @@ An attribute of a fragment inside a triangle can be computed by using barycentri
 
 Incorrect       | Correct
 :-------------------------:|:-------------------------:
-![](renders/checkerboard_incorrect_perspective.png)|![](renders/checkerboard_incorrect_perspective.png)
+![](renders/checkerboard_incorrect_perspective.png)|![](renders/checkerboard_perspective.png)
 
 ### 2. Bilinear filtering
 
@@ -102,7 +101,7 @@ k-buffer is a generalized version of the traditional z-buffer for depth. Instead
 
 k-buffer **ON**        | k-buffer **OFF**
 :-------------------------:|:-------------------------:
-![](renders/videos/truck.gif)|![](renders/truck_kbuffer.gif)
+![](renders/videos/truck.gif)|![](renders/videos/truck.gif)
 
 # Performance analysis
 
@@ -119,7 +118,7 @@ The following graph shows the execution time (_microseconds_) for various kernel
 
 ![](renders/videos/head.gif)
 
-![](renders/analysis/head_20s_kernel_time)
+![](renders/analysis/head_20s_kernel_time.png)
 
 The bottleneck happens in the `_rasterize` kernel because we have to loop through each pixel in every triangle's bounding box. Therefore, each `_rasterize` kernel is bounded by O(n<sup>2</sup>), where n is the size of the triangle's bounding box in screen space. This means that a large triangle with a large bounding box will have a performance hit. To compare, I profiled a scene with the head model where the camera is located at the origin, versus a scene where the camera is zoomed in.
 
@@ -127,13 +126,13 @@ Camera at origin        | Camera zoomed in
 :-------------------------:|:-------------------------:
 ![](renders/head.png)|![](renders/head_zoomed_in.png)
 
-![](renders/analysis/head_20s_zooms)
+![](renders/analysis/head_20s_zooms.png)
 
 While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can scale up really well with high number of triangles.
 
 Similarly, I profiled the execution time (_microseconds_) with the following features on and off:
 
-![](renders/analysis/head_20s_kernel_time_with_features)
+![](renders/analysis/head_20s_kernel_time_with_features.png)
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
