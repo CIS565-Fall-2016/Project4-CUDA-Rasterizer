@@ -251,6 +251,14 @@ void rasterizeInit(int w, int h) {
 	cudaMalloc(&dev_depthRevealage, width * height * sizeof(float));
 
 	checkCUDAError("rasterizeInit");
+
+#ifdef BILINEAR_FILTERING
+	printf("BILINEAR FILTERING ENABLED\n");
+#endif
+
+#ifdef USE_K_BUFFER
+	printf("USING K-BUFFER\n");
+#endif
 }
 
 __global__
