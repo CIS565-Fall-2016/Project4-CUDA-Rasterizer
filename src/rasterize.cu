@@ -5,6 +5,9 @@
  * @date      2012-2016
  * @copyright University of Pennsylvania & STUDENT
  */
+#include <thrust/remove.h>
+#include <thrust/device_vector.h>
+#include <thrust/count.h>
 
 #include <cmath>
 #include <cstdio>
@@ -20,7 +23,8 @@
 #include <algorithm>
 
 
-namespace {
+
+//namespace 
 
 	typedef unsigned short VertexIndex;
 	typedef glm::vec3 VertexAttributePosition;
@@ -152,7 +156,8 @@ namespace {
 		// TODO: add more attributes when needed
 	};
 
-}
+
+
 
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
@@ -165,6 +170,7 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
+bool *dev_flag = NULL;
 int *dev_mutex = NULL;
 
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
@@ -202,7 +208,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	glm::vec3 lightPos(5.0f, 5.0f, 5.0f);
 	Fragment cacheFragment = fragmentBuffer[index];
 	if (x < w && y < h && cacheFragment.hasColor) {
-		float diffuseTerm = 0.6 * glm::clamp(glm::dot(cacheFragment.eyeNor, lightPos), 0.0f, 1.0f);
+		float diffuseTerm = 0.4 * glm::clamp(glm::dot(cacheFragment.eyeNor, lightPos), 0.0f, 1.0f);
 		float ambientTerm = 0.6f;
 		glm::vec3 L = glm::normalize(lightPos - cacheFragment.eyePos);
 		glm::vec3 N = cacheFragment.eyeNor;
@@ -215,9 +221,9 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		{
 			//if (!(cacheFragment.diffuseTexWidth>0 && cacheFragment.diffuseTexHeight>0 & cacheFragment.diffuseTexComponent>0))
 			//	printf("com:%d %d %d\n", cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
-			textureColor = cacheFragment.color * (diffuseTerm + ambientTerm);//
+			//textureColor = cacheFragment.color * (diffuseTerm + ambientTerm);//
 			//textureColor = getTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
-			//textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
+			textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
 			//textureColor = glm::vec3(cacheFragment.texcoord0, 0.0f);
 			//printf("coord:%f %f\ncolor:%f %f %f\n\n", cacheFragment.texcoord0[0], cacheFragment.texcoord0[1], textureColor[0], textureColor[1], textureColor[2]);
 			
@@ -698,6 +704,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 	// 3. Malloc for dev_primitives
 	{
 		cudaMalloc(&dev_primitives, totalNumPrimitives * sizeof(Primitive));
+		cudaMalloc(&dev_flag, totalNumPrimitives * sizeof(bool));
 	}
 	
 
@@ -786,12 +793,42 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		//dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 		pid = iid / 3;
 		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = c[iid % 3];
-		//dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = glm::vec3(1.0f, 1.0f, 1.0f);
+		//dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = c[iid % 3];
+		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = glm::vec3(1.0f, 1.0f, 1.0f);
 		//printf("%d\n", pid + curPrimitiveBeginId);
 		// TODO: other primitive types (point, line)
 	}
 	
+}
+
+__global__ void _backFaceCulling(int numIndices, Primitive* primitives, bool *flag)
+{
+	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	Primitive cachePrimitive = primitives[pid];
+	if (pid < numIndices)
+	{
+		glm::vec3 v0 = cachePrimitive.v[1].eyePos - cachePrimitive.v[0].eyePos;
+		glm::vec3 v1 = cachePrimitive.v[2].eyePos - cachePrimitive.v[0].eyePos;
+		glm::vec3 temp = glm::cross(v0, v1);
+		if (temp.z < 0.0f)
+			flag[pid] = false;
+		else
+			flag[pid] = true;
+	}
+
+}
+
+void _primitivesCompress(int &numIndices, Primitive* primitives, bool *flag)
+{
+	thrust::device_ptr<bool> dev_ptrFlag(flag);
+	thrust::device_ptr<Primitive> dev_primitives(primitives);
+	thrust::remove_if(dev_primitives, dev_primitives + numIndices, dev_ptrFlag, thrust::logical_not<bool>());
+	numIndices = thrust::count_if(dev_ptrFlag, dev_ptrFlag + numIndices, thrust::identity<bool>());
+
+	//thrust::device_ptr<bool> dev_ptrFlag(flag);
+	//thrust::device_ptr<PathSegment> dev_ptrPaths(paths);
+	//thrust::remove_if(dev_ptrPaths, dev_ptrPaths + num_paths, dev_ptrFlag, thrust::logical_not<bool>());
+	//num_paths = thrust::count_if(dev_ptrFlag, dev_ptrFlag + num_paths, thrust::identity<bool>());
 }
 
 __device__ float triangleArea(glm::vec4 v1, glm::vec4 v2)
@@ -1135,12 +1172,16 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
-	
+	dim3 numBlocksForPrimitives((curPrimitiveBeginId + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+
+	_backFaceCulling<< < numBlocksForPrimitives, numThreadsPerBlock >> >(curPrimitiveBeginId, dev_primitives, dev_flag);
+	_primitivesCompress(curPrimitiveBeginId, dev_primitives, dev_flag);
+
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth, dev_fragmentBuffer);
 	//printf("id:%d total:%d\n", curPrimitiveBeginId, totalNumPrimitives);	
 	// TODO: rasterize
-	dim3 numBlocksForPrimitives((curPrimitiveBeginId + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+	
 	//printf("%d\n", (curPrimitiveBeginId + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 
 	cudaMemset(dev_mutex, 0, width * height * sizeof(int));
@@ -1195,5 +1236,8 @@ void rasterizeFree() {
 
 	cudaFree(dev_mutex);
 	dev_mutex = NULL;
+
+	cudaFree(dev_flag);
+	dev_flag = NULL;
     checkCUDAError("rasterize Free");
 }

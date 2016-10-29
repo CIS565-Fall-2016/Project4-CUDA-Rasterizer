@@ -108,7 +108,7 @@ void runCuda() {
 	//glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
 	//	scale * ((float)width / (float)height),
 	//	-scale, scale, 1.0, 1000.0);
-	glm::mat4 P = glm::perspective(3.14159f / 3, 1.0f, 0.1f, 1000.0f);
+	glm::mat4 P = glm::perspective(3.14159f / 3, 1.0f, 1.f, 1000.0f);
 	glm::mat4 V = glm::mat4(1.0f);
 
 	glm::mat4 M =
