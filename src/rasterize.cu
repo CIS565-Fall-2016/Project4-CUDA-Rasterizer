@@ -48,7 +48,6 @@ namespace {
     glm::vec2 texcoord0;
     cudaArray* dev_diffuseTex = NULL;
     cudaTextureObject_t dev_diffuseTexObj = 0;
-		int diffuseTex_w, diffuseTex_h;
 		// ...
 	};
 
@@ -58,7 +57,9 @@ namespace {
 	};
 
 	struct Fragment {
-		glm::vec3 color;
+    glm::vec3 eyePos;
+    glm::vec3 eyeNor;
+    float z, ssao;
 
 		// TODO: add new attributes to your Fragment
 		// The attributes listed below might be useful,
@@ -87,7 +88,6 @@ namespace {
 		// Materials, add more attributes when needed
 		cudaArray *dev_diffuseTex;
     cudaTextureObject_t dev_diffuseTexObj;
-    int diffuseTex_w, diffuseTex_h;
 		// TextureData* dev_specularTex;
 		// TextureData* dev_normalTex;
 		// ...
@@ -137,6 +137,69 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
     }
 }
 
+static cudaTextureObject_t dev_ssaoTexObj = 0;
+static cudaArray *dev_ssaoTexArray = nullptr;
+static glm::vec3 *dev_ssaoKernel = nullptr;
+static cudaArray *dev_ssaoOutArray = nullptr;
+static cudaSurfaceObject_t dev_ssaoOutSurfObj;
+static cudaTextureObject_t dev_ssaoOutTexObj;
+void ssaoInit(int nKernel, int nRandom, int width, int height) {
+  std::uniform_real_distribution<float> dist(0.0, 1.0);
+  std::default_random_engine rng;
+
+  // generate sampling kernel
+  glm::vec3 *kern = new glm::vec3[nKernel*nKernel];
+  float scale = 1.0f / (nKernel*nKernel);
+  for (int i = 0; i < nKernel*nKernel; i++) {
+    kern[i].x = 2.0f*dist(rng) - 1.0f;
+    kern[i].y = 2.0f*dist(rng) - 1.0f;
+    kern[i].z = dist(rng);
+    kern[i] = glm::normalize(kern[i]) * scale;
+    scale = 0.1f + 0.9f*scale*scale;
+  }
+  cudaMalloc(&dev_ssaoKernel, nKernel*nKernel*sizeof(glm::vec3));
+  cudaMemcpy(dev_ssaoKernel, kern, nKernel*nKernel*sizeof(glm::vec3), cudaMemcpyHostToDevice);
+  delete kern;
+
+  // generate randomization texture
+  float4 *noise = new float4[nRandom*nRandom];
+  for (int i = 0; i < nRandom*nRandom; i++) {
+    noise[i].x = 2.0f*dist(rng) - 1.0f;
+    noise[i].y = 2.0f*dist(rng) - 1.0f;
+    noise[i].z = noise[i].w = 0.0f;
+  }
+  cudaChannelFormatDesc channel = cudaCreateChannelDesc<float4>();
+  cudaMallocArray(&dev_ssaoTexArray, &channel, nRandom, nRandom);
+  cudaMemcpyToArray(dev_ssaoTexArray, 0, 0, noise, nRandom*nRandom*sizeof(float4), cudaMemcpyHostToDevice);
+  checkCUDAError("Set Texture Image data");
+  delete noise;
+
+  // Specify texture
+  cudaResourceDesc resDesc;
+  memset(&resDesc, 0, sizeof(resDesc));
+  resDesc.resType = cudaResourceTypeArray;
+  resDesc.res.array.array = dev_ssaoTexArray;
+
+  // Specify texture object parameters
+  cudaTextureDesc texDesc;
+  memset(&texDesc, 0, sizeof(texDesc));
+  texDesc.addressMode[0]   = cudaAddressModeWrap;
+  texDesc.addressMode[1]   = cudaAddressModeWrap;
+  texDesc.filterMode       = cudaFilterModeLinear;
+  texDesc.readMode         = cudaReadModeElementType;
+  texDesc.normalizedCoords = 1;
+
+  // Create texture object
+  cudaCreateTextureObject(&dev_ssaoTexObj, &resDesc, &texDesc, NULL);
+
+  // Create output array
+  channel = cudaCreateChannelDesc<float>();
+  cudaMallocArray(&dev_ssaoOutArray, &channel, width, height);
+  resDesc.res.array.array = dev_ssaoOutArray;
+  cudaCreateSurfaceObject(&dev_ssaoOutSurfObj, &resDesc);
+  cudaCreateTextureObject(&dev_ssaoOutTexObj, &resDesc, &texDesc, NULL);
+}
+
 /**
  * Called once at the beginning of the program to allocate memory.
  */
@@ -154,6 +217,8 @@ void rasterizeInit(int w, int h) {
 
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(unsigned long long));
+
+  ssaoInit(8, 4, w, h);
 
 	checkCUDAError("rasterizeInit");
 }
@@ -351,10 +416,10 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 						return;
 
 					// TODO: add new attributes for your PrimitiveDevBufPointers when you add new attributes
-					VertexIndex* dev_indices;
-					VertexAttributePosition* dev_position;
-					VertexAttributeNormal* dev_normal;
-					VertexAttributeTexcoord* dev_texcoord0;
+					VertexIndex* dev_indices = nullptr;
+					VertexAttributePosition* dev_position = nullptr;
+					VertexAttributeNormal* dev_normal = nullptr;
+					VertexAttributeTexcoord* dev_texcoord0 = nullptr;
 
 					// ----------Indices-------------
 
@@ -498,7 +563,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 					// implement textures for your rasterizer
 					cudaArray* dev_diffuseTex = NULL;
           cudaTextureObject_t dev_diffuseTexObj = 0;
-          int diffuseTex_h, diffuseTex_w;
 					if (!primitive.material.empty()) {
 						const tinygltf::Material &mat = scene.materials.at(primitive.material);
 						printf("material.name = %s\n", mat.name.c_str());
@@ -543,10 +607,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
                   // Create texture object
                   cudaCreateTextureObject(&dev_diffuseTexObj, &resDesc, &texDesc, NULL);
 
-                  // TODO: store the image size to your PrimitiveDevBufPointers
-									diffuseTex_w = image.width;
-									diffuseTex_h = image.height;
-
 									checkCUDAError("Set Texture Image data");
 								}
 							}
@@ -587,8 +647,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 						dev_diffuseTex,
             dev_diffuseTexObj,
-            diffuseTex_w,
-            diffuseTex_h,
 
 						dev_vertexOut	//VertexOut
 					});
@@ -660,10 +718,9 @@ void _vertexTransformAndAssembly(
 
     vOut.dev_diffuseTex = primitive.dev_diffuseTex;
     vOut.dev_diffuseTexObj = primitive.dev_diffuseTexObj;
-    vOut.diffuseTex_w = primitive.diffuseTex_w;
-    vOut.diffuseTex_h = primitive.diffuseTex_h;
 
-    vOut.texcoord0 = primitive.dev_texcoord0[vid];
+    if (primitive.dev_texcoord0)
+      vOut.texcoord0 = primitive.dev_texcoord0[vid];
 
 	}
 }
@@ -704,8 +761,14 @@ __device__ static inline uint64_t FloatFlip(float f, int i)
 	uint32_t fi = *((uint32_t*)&f), mask = (fi & 0x80000000) ? 0xFFFFFFFF : 0x80000000;
 	return (((uint64_t)(fi ^ mask)) << 32) | i;
 }
+__device__ static inline float FloatUnflip(uint64_t u)
+{
+  u >>= 32;
+  uint32_t mask = (u & 0x80000000) ? 0xFFFFFFFF : 0x80000000, fi = u ^ mask;
+	return *((float*)&fi);
+}
 
-__global__ void _fragDepthFind(int numPrimitives, Primitive *dev_primitives, int w, int h, unsigned long long *depth) {
+__global__ void depthPass(int numPrimitives, Primitive *dev_primitives, int w, int h, unsigned long long *depth) {
   int pIdx = blockIdx.x * blockDim.x + threadIdx.x;
   if (pIdx >= numPrimitives)
     return;
@@ -726,6 +789,7 @@ __global__ void _fragDepthFind(int numPrimitives, Primitive *dev_primitives, int
       atomicMin(&depth[i+w*j], FloatFlip(getZAtCoordinate(bary, tri),pIdx));
   }}
 }
+
 
 __device__ void shadeFragment(unsigned int i, unsigned int j, const Primitive &p, glm::vec3 &out) {
   glm::vec3 tri[3];
@@ -763,16 +827,140 @@ __global__ void _fragRasterize(int numPrimitives, Primitive *dev_primitives, Fra
   if (pIdx < 0)
     return;
   Primitive &p = dev_primitives[pIdx];
+  Fragment &f = dev_fragments[i+w*j];
 
-  shadeFragment(i,j,p,framebuffer[i+w*j]);
+  glm::vec3 tri[3];
+  tri[0] = glm::vec3(p.v[0].pos);
+  tri[1] = glm::vec3(p.v[1].pos);
+  tri[2] = glm::vec3(p.v[2].pos);
+  glm::vec2 coord(i,j);
+  glm::vec3 bary = calculateBarycentricCoordinate(tri, coord);
+  f.z = FloatUnflip(depth[i+w*j]);
+
+  // lambert
+  f.eyePos = glm::normalize(bary.x*p.v[0].eyePos
+                          + bary.y*p.v[1].eyePos
+                          + bary.z*p.v[2].eyePos);
+  f.eyeNor = glm::normalize(bary.x*p.v[0].eyeNor
+                          + bary.y*p.v[1].eyeNor
+                          + bary.z*p.v[2].eyeNor);
+  glm::vec3 lambert = glm::clamp(-glm::vec3(glm::dot(f.eyePos, f.eyeNor)), 0.0f, 1.0f);
+
+  glm::vec3 texBary = bary / glm::vec3(p.v[0].pos[3], p.v[1].pos[3], p.v[2].pos[3]);
+  glm::vec2 st0 = texBary[0]*p.v[0].texcoord0
+        + texBary[1]*p.v[1].texcoord0
+        + texBary[2]*p.v[2].texcoord0;
+  st0 /= texBary[0] + texBary[1] + texBary[2];
+
+  if (p.v[0].dev_diffuseTex) {
+    float4 rgba = tex2D<float4>(p.v[0].dev_diffuseTexObj, st0.x, st0.y);
+    lambert *= glm::vec3(rgba.x,rgba.y,rgba.z);
+  }
+  framebuffer[i + w*j] = lambert;
 }
 
+__device__ static inline float smoothstep(float a, float b, float x) {
+  x = (x-a)/(b-a);
+  x = (x < 0.0f) ? 0.0f : ((x > 1.0f) ? 1.0f : x);
+  return x*x*(3.0f - 2.0f*x);
+}
+
+__global__ void ssaoPass(int w, int h, Fragment *dev_fragments, const glm::mat4 P,
+                          int ssaoTexSize, int ssaoTexObj,
+                          int ssaoKernSize, const glm::vec3 *ssaoKern,
+                          float ssaoRadius, unsigned long long *depth, glm::vec3 *framebuffer) {
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= w || j >= h)
+    return;
+  Fragment &f = dev_fragments[i + w*j];
+
+  float4 rVec4 = tex2D<float4>(ssaoTexObj, float(i)/ssaoTexSize, float(j)/ssaoTexSize);
+  glm::vec3 rVec(rVec4.x, rVec4.y, 0.0);
+  glm::vec3 tVec = glm::normalize(rVec - f.eyeNor * glm::dot(rVec, f.eyeNor));
+  glm::vec3 bVec = glm::cross(f.eyeNor, tVec);
+  glm::mat3 TBN(tVec, bVec, f.eyeNor);
+
+  float ssao = 0.0f;
+  for (int k = 0; k < ssaoKernSize*ssaoKernSize; k++) {
+    glm::vec4 samp = P*glm::vec4(ssaoRadius*TBN*ssaoKern[k] + f.eyePos, 1.0f);
+    int si = 0.5f * w * (samp.x + 1.0f);
+    int sj = 0.5f * h * (1.0f - samp.y);
+    float z = dev_fragments[si + w*sj].z;
+    if (z > f.z)
+      ssao += smoothstep(0.0, 1.0, ssaoRadius / fabs(f.z - z));
+  }
+  ssao = 1.0 - ssao/(ssaoKernSize*ssaoKernSize);
+  framebuffer[i+w*j] = glm::vec3(ssao);
+}
+
+__global__ void ssaoPassShared(int w, int h, Fragment *dev_fragments, const glm::mat4 P,
+                          int ssaoTexSize, int ssaoTexObj,
+                          int ssaoKernSize, const glm::vec3 *ssaoKern, float ssaoRadius) {
+  extern __shared__ Fragment sFrag[];
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= w || j >= h)
+    return;
+
+  // load the fragment into shared memory
+  int tIdx = threadIdx.x + blockDim.x * threadIdx.y;
+  sFrag[tIdx] = dev_fragments[i + w*j];
+  Fragment &f = sFrag[tIdx];
+
+  float4 rVec4 = tex2D<float4>(ssaoTexObj, float(i)/ssaoTexSize, float(j)/ssaoTexSize);
+  glm::vec3 rVec(rVec4.x, rVec4.y, 0.0);
+  glm::vec3 tVec = glm::normalize(rVec - f.eyeNor * glm::dot(rVec, f.eyeNor));
+  glm::vec3 bVec = glm::cross(f.eyeNor, tVec);
+  glm::mat3 TBN(tVec, bVec, f.eyeNor);
+
+  f.ssao = 0.0;
+  for (int k = 0; k < ssaoKernSize*ssaoKernSize; k++) {
+    glm::vec4 samp = P*glm::vec4(ssaoRadius*TBN*ssaoKern[k] + f.eyePos, 1.0f);
+    int si = glm::floor(0.5f * w * (samp.x + 1.0f));
+    int sj = glm::floor(0.5f * h * (1.0f - samp.y));
+    if (si >= 0 && sj >= 0 && si < w && sj < h) {
+      float z = dev_fragments[si + w*sj].z;
+      if (z > f.z)
+        f.ssao += smoothstep(0.0, 1.0, ssaoRadius / fabs(f.z - z));
+    }
+  }
+  dev_fragments[i+w*j].ssao = 1.0 - f.ssao/(ssaoKernSize*ssaoKernSize);
+}
+
+__global__ void ssaoBlur(int w, int h, Fragment *dev_fragments, int ssaoTexSize, glm::vec3 *framebuffer) {
+  extern __shared__ Fragment sFrag[];
+
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  int j = blockIdx.y * blockDim.y + threadIdx.y;
+  if (i >= w || j >= h)
+    return;
+
+  // load the fragment into shared memory
+  int tIdx = threadIdx.x + blockDim.x * threadIdx.y;
+  int idx = i + w*j;
+  sFrag[tIdx] = dev_fragments[idx];
+
+  float ssao = 0.0f;
+  int n = 0;
+  for (int sj = j-ssaoTexSize/2; sj < j+ssaoTexSize/2; sj++) {
+  for (int si = i-ssaoTexSize/2; si < i+ssaoTexSize/2; si++) {
+    if (si >= 0 && sj >= 0 && si < w && sj < h)
+      ssao += dev_fragments[si + w*sj].ssao;
+    else
+      continue;
+    n++;
+  }}
+  ssao /= n;
+  framebuffer[idx] *= ssao;
+}
 
 /**
  * Perform rasterization.
  */
-void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
-  int sideLength2d = 8;
+void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal, const glm::mat4 &P) {
+  int sideLength2d = 16;
   dim3 blockSize2d(sideLength2d, sideLength2d);
   dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
   (height - 1) / blockSize2d.y + 1);
@@ -813,13 +1001,21 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   cudaMemset(dev_depth, 0xFF, width * height * sizeof(unsigned long long));
   cudaMemset(dev_framebuffer, 0, width*height*sizeof(glm::vec3));
 
-  dim3 blockDim1d(256);
+  dim3 blockDim1d(1024);
   dim3 blockCnt1d((totalNumPrimitives + blockDim1d.x - 1)/blockDim1d.x);
 
-  _fragDepthFind<<<blockCnt1d,blockDim1d>>>(totalNumPrimitives, dev_primitives, width, height, dev_depth);
+  depthPass<<<blockCnt1d,blockDim1d>>>(totalNumPrimitives, dev_primitives, width, height, dev_depth);
   checkCUDAError("fragDepthFind");
 
   _fragRasterize<<<blockCount2d,blockSize2d>>>(totalNumPrimitives, dev_primitives, dev_fragmentBuffer, width, height, dev_depth, dev_framebuffer);
+  checkCUDAError("fragRasterize");
+
+  //cudaMemset(dev_framebuffer, 0, width*height*sizeof(glm::vec3));
+  int smSize = sideLength2d*sideLength2d*sizeof(Fragment);
+  ssaoPassShared<<<blockCount2d,blockSize2d,smSize>>>(width, height, dev_fragmentBuffer, P, 4, dev_ssaoTexObj, 8, dev_ssaoKernel, 5.0);
+  checkCUDAError("fragRasterize");
+
+  ssaoBlur<<<blockCount2d,blockSize2d,smSize>>>(width, height, dev_fragmentBuffer, 4, dev_framebuffer);
   checkCUDAError("fragRasterize");
 
   // Copy framebuffer into OpenGL buffer for OpenGL previewing

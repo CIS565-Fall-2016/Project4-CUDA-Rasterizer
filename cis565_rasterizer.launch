@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <launchConfiguration type="org.eclipse.cdt.launch.applicationLaunchType">
 <stringAttribute key="bad_container_name" value="/Project4-CUDA-Rasterize"/>
+<booleanAttribute key="nvvp.apiTraceProfiling" value="true"/>
+<booleanAttribute key="nvvp.appReplay" value="false"/>
+<booleanAttribute key="nvvp.concurrentProfiling" value="true"/>
+<booleanAttribute key="nvvp.environmentProfiling" value="false"/>
+<intAttribute key="nvvp.multiProcess" value="0"/>
+<booleanAttribute key="nvvp.startProfiling" value="true"/>
+<intAttribute key="nvvp.timeout" value="0"/>
+<booleanAttribute key="nvvp.uvmProfiling" value="true"/>
 <stringAttribute key="org.eclipse.cdt.debug.mi.core.DEBUG_NAME" value="${cuda_tk_bin:/Project4-CUDA-Rasterizer}/cuda-gdb"/>
 <stringAttribute key="org.eclipse.cdt.debug.mi.core.GDB_INIT" value=".cuda-gdbinit"/>
 <stringAttribute key="org.eclipse.cdt.debug.mi.core.protocol" value="mi"/>
