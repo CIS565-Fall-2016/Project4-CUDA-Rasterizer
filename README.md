@@ -18,9 +18,11 @@ include vertex shading, primitive assembly, raterization and fragment shading. H
   * Primitive assembly
   * Rasterization
   * Depth test
+  * Race avoidance with atomic
   * Fragment shader (with lambert lighting)
   * Fragment-to-depth-buffer writing (with atomics for race avoidance).
   * A depth buffer for storing and depth testing fragments. 
+  * Interpolation near primitive points
 * UV texture mapping with bilinear texture filtering and perspective correct texture coordinates
 * Support for rasterizing additional primitives: lines and points
 
