@@ -194,7 +194,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 
 	// Initialize shared memory
 	__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
-
+	__syncthreads();
 	if (x < w && y < h) {
 		
 		int local_x = x % BLOCK_WIDTH;
@@ -215,7 +215,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 			for (int j = -5; j <= 5; j++) {
 				int neigh;
 				if ((local_x + i) < 0 || (local_x + i) >= BLOCK_WIDTH ||
-					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH || true) {
+					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH) {
 					// Can't use shared memory
 
 					//num_global++;
@@ -230,11 +230,10 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 
 					//num_shared++;
 					final_color += neighbors[local_index + i + j * BLOCK_WIDTH];
-
 				}
 			}
 		}
-
+		
 		framebuffer_out[index] = final_color * avg;
 	}
 }
@@ -1007,7 +1006,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaEventRecord(effects_start);
 	
 	// Blur
-	//blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
+	blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
 
 	cudaEventRecord(effects_stop);
 	cudaEventSynchronize(effects_stop);
@@ -1018,7 +1017,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
 
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_preeffectbuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
 }
 
