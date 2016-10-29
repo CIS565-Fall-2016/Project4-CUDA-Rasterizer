@@ -44,7 +44,7 @@ With shared memory...13ms per frame -- WRONG (bug in code)
 - 4.23 - 4.25ms
 
 
-![duck](img/Duck_blur_21)
+![duck](img/Duck_blur_21.PNG)
 ### Performance/Optimizations
 
 ![duck](img/Duck_shared_memory.PNG)
