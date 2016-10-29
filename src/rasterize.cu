@@ -18,6 +18,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define LAMBERT_SHADING 1
+#define TILE_BASED_RASTERIZATION 0
+
 namespace {
 
 	typedef unsigned short VertexIndex;
@@ -110,6 +113,21 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
+#if TILE_BASED_RASTERIZATION
+// FIXME: tile size is hard to manage
+
+static int tile_w_count = 0;
+static int tile_h_count = 0;
+
+const int tile_width = 64;
+const int tile_height = 64;
+
+const int max_tile_prim_count = 32;
+static Primitive * dev_tile_primitives = nullptr;
+static int * dev_tile_prim_counts = nullptr;
+#endif
+static int * dev_frag_mutex = nullptr;
+
 static int * dev_depth = NULL;	// you might need this buffer when doing depth test
 
 /**
@@ -138,20 +156,21 @@ void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 * Writes fragment colors to the framebuffer
 */
 __global__
-void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
+void render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
 	int index = x + (y * w);
 
-	if (x < w && y < h) 
+	if (x < w && y < h)
 	{
-		framebuffer[index] = fragmentBuffer[index].color;
+		// DONE: add your fragment shader code here
+		auto frag = fragmentBuffer[index]; // copy to local mem
+		glm::vec3 color;
 
-		// TODO: add your fragment shader code here
-		auto& frag = fragmentBuffer[index];
+		// Base Color
 		if (!frag.diffuse_tex)
 		{
-			framebuffer[index] = frag.color;
+			color = frag.color;
 		}
 		else
 		{
@@ -161,13 +180,21 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			if (ty < 0) { ty += frag.diffuse_tex_height; }
 			int pixel_index = 3 * (tx + ty * frag.diffuse_tex_width);
 			
-			framebuffer[index] = glm::vec3(
+			color = glm::vec3(
 				frag.diffuse_tex[pixel_index] / 255.f,
 				frag.diffuse_tex[pixel_index + 1] / 255.f,
 				frag.diffuse_tex[pixel_index + 2] / 255.f
 			);
 		}
-    }
+
+		// Lighting
+#if LAMBERT_SHADING
+		const auto light_dir = glm::vec3(1.f, 1.f, 1.f);
+		color *= fmaxf(0.f, glm::dot(light_dir, frag.eyeNor));
+#endif
+		// output
+		framebuffer[index] = color;
+	}
 }
 
 /**
@@ -186,11 +213,27 @@ void rasterizeInit(int w, int h) {
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
 
+#if TILE_BASED_RASTERIZATION
+	tile_w_count = (width - 1) / tile_width + 1;
+	tile_h_count = (height - 1) / tile_height + 1;
+	if (dev_tile_primitives) { cudaFree(dev_tile_primitives); }
+	cudaMalloc(&dev_tile_primitives
+		, tile_w_count * tile_h_count * max_tile_prim_count * sizeof(dev_tile_primitives[0]));
+	if (dev_tile_prim_counts) { cudaFree(dev_tile_prim_counts); }
+	cudaMalloc(&dev_tile_prim_counts
+		, tile_w_count * tile_h_count * sizeof(dev_tile_prim_counts[0]));
+	cudaMemset(dev_tile_prim_counts, 0
+		, tile_w_count * tile_h_count * sizeof(dev_tile_prim_counts[0]));
+#endif
+	if (dev_frag_mutex) { cudaFree(dev_frag_mutex); }
+	cudaMalloc(&dev_frag_mutex, width * height * sizeof(dev_frag_mutex[0]));
+	cudaMemset(dev_frag_mutex, 0, width * height * sizeof(dev_frag_mutex[0]));
+
 	checkCUDAError("rasterizeInit");
 }
 
 __global__
-void initDepth(int w, int h, int * depth)
+void initDepthAndMutex(int w, int h, int * depth, int* mutex)
 {
 	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
 	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -199,6 +242,7 @@ void initDepth(int w, int h, int * depth)
 	{
 		int index = x + (y * w);
 		depth[index] = INT_MAX;
+		mutex[index] = 0;
 	}
 }
 
@@ -346,8 +390,6 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 		}
 	}
-
-
 
 	// 2. for each mesh: 
 	//		for each primitive: 
@@ -664,7 +706,7 @@ void _vertexTransformAndAssembly(
 	// DONE: Apply vertex assembly here
 	// Assemble all attribute arraies into the primitive array
 	auto eye_pos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.f));
-	auto eye_normal = MV_normal * primitive.dev_normal[vid]; //TODO: normalize?
+	auto eye_normal = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 	auto tex_coord = primitive.dev_texcoord0[vid];
 	auto tex_diffuse = primitive.dev_diffuseTex;
 
@@ -691,14 +733,15 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// This is primitive assembly for triangles
 
 		int pid;	// id for cur primitives vector
-		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) 
+		{
 			pid = iid / (int)primitive.primitiveType;
 			auto& out_primitive = dev_primitives[pid + curPrimitiveBeginId];
 			auto v_index = iid % (int)primitive.primitiveType;
 			out_primitive.v[v_index] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 			out_primitive.primitiveType = primitive.primitiveType;
 
-			//if (v_index == 0)
+			if (v_index == 0)
 			{
 				out_primitive.diffuse_tex = primitive.dev_diffuseTex;
 				out_primitive.diffuse_tex_width = primitive.diffuseTexWidth;
@@ -721,6 +764,7 @@ __device__ void rasterizeTriangleFrag(
 	, int height
 	, Fragment * frag_buffer
 	, int * depth_buffer
+	, int * mutex_buffer
 )
 {
 	if (!(x >= 0 && x < width && y >= 0 && y < height))
@@ -728,7 +772,6 @@ __device__ void rasterizeTriangleFrag(
 		return;
 	}
 
-	
 	auto bary_coord = calculateBarycentricCoordinate(tri, glm::vec2(x, y));
 
 	if (!isBarycentricCoordInBounds(bary_coord))
@@ -737,22 +780,38 @@ __device__ void rasterizeTriangleFrag(
 	}
 
 	auto frag_index = x + y * width;
-	auto depth = -getZAtCoordinate(bary_coord, tri) * INT_MAX;
-	atomicMin(&depth_buffer[frag_index], depth);
 
-	if (depth != depth_buffer[frag_index])
+	auto depth = -getZAtCoordinate(bary_coord, tri) * INT_MAX;
+
+	//// lock mutex
+	while (true)
 	{
-		return;
+		auto v = atomicCAS(mutex_buffer + frag_index, 0, 1);
+		if (v == 0)
+		{
+			// mutex locked
+			break;
+		}
 	}
 
-	frag_buffer[frag_index].color = glm::vec3(0.5f);
-	frag_buffer[frag_index].diffuse_tex = primitive.diffuse_tex;
-	frag_buffer[frag_index].diffuse_tex_height = primitive.diffuse_tex_height;
-	frag_buffer[frag_index].diffuse_tex_width = primitive.diffuse_tex_width;
-	//interpolate
-	frag_buffer[frag_index].eyePos = baryInterpolate( bary_coord, primitive.v[0].eyePos, primitive.v[1].eyePos, primitive.v[2].eyePos);
-	frag_buffer[frag_index].eyeNor = baryInterpolate( bary_coord, primitive.v[0].eyeNor, primitive.v[1].eyeNor, primitive.v[2].eyeNor);
-	frag_buffer[frag_index].texcoord0 = baryInterpolate(bary_coord, primitive.v[0].texcoord0, primitive.v[1].texcoord0, primitive.v[2].texcoord0);
+	// FIXME: DEAD LOCK!!!! TWO BLOCKS IN DIFFERENT PRIMITIVES MAY BE WAITING FOR EACH OTHER (as long as one of their vertices are waiting)
+	if (depth < depth_buffer[frag_index])
+	{
+		depth_buffer[frag_index] = depth;
+		frag_buffer[frag_index].color = glm::vec3(1.f);
+		frag_buffer[frag_index].diffuse_tex = primitive.diffuse_tex;
+		frag_buffer[frag_index].diffuse_tex_height = primitive.diffuse_tex_height;
+		frag_buffer[frag_index].diffuse_tex_width = primitive.diffuse_tex_width;
+
+		frag_buffer[frag_index].eyePos = baryInterpolate(bary_coord, primitive.v[0].eyePos, primitive.v[1].eyePos, primitive.v[2].eyePos);
+		frag_buffer[frag_index].eyeNor = baryInterpolate(bary_coord, primitive.v[0].eyeNor, primitive.v[1].eyeNor, primitive.v[2].eyeNor);
+		frag_buffer[frag_index].texcoord0 = baryInterpolate(bary_coord, primitive.v[0].texcoord0, primitive.v[1].texcoord0, primitive.v[2].texcoord0);
+
+	}
+
+	// unlock mutex
+	atomicExch(mutex_buffer + frag_index, 0);
+	
 }
 
 __global__ void kernRasterizePrimitives(
@@ -762,6 +821,7 @@ __global__ void kernRasterizePrimitives(
 	, int height
 	, Fragment * frag_buffer
 	, int * depth_buffer
+	, int * mutex_buffer
 	)
 {
 	// index id
@@ -774,42 +834,27 @@ __global__ void kernRasterizePrimitives(
 	{
 		glm::vec2 aabb_min = { 
 			fmaxf(fminf(fminf( primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , 0)
-			, fmaxf(fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , 0)
-			//, fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2]) 
+			, fmaxf(fminf(fminf(primitive.v[0].pos[1],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , 0)
 			};
 		glm::vec2 aabb_max = {
 			fminf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , width - 1)
-			, fminf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , height - 1)
-			//, fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2])
+			, fminf(fmaxf(fmaxf(primitive.v[0].pos[1],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , height - 1)
 			};
 
-		//glm::vec2 aabb_min = { 
-		//	fminf(fminf(fminf( primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , 0)
-		//	, fminf(fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , 0)
-		//	//, fminf(fminf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2]) 
-		//	};
-		//glm::vec2 aabb_max = {
-		//	fmaxf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[0]) , primitive.v[2].pos[0]) , width)
-		//	, fmaxf(fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[1]) , primitive.v[2].pos[1]) , height)
-		//	//, fmaxf(fmaxf(primitive.v[0].pos[0],primitive.v[1].pos[2]) , primitive.v[2].pos[2])
-		//	};
-
 		// TODO: CUDA Dynamic Parallelism?
-		// TODO: the rest of things
 		glm::vec3 tri_pos[3] = { glm::vec3(primitive.v[0].pos) 
 			, glm::vec3(primitive.v[1].pos) 
 			, glm::vec3(primitive.v[2].pos) 
 			};
-		for (int x = aabb_min.x; x < aabb_max.x; x++)
+		for (int x = aabb_min.x; x <= static_cast<int>(aabb_max.x); x++)
 		{
-			for (int y = aabb_min.y; y < aabb_max.y; y++)
+			for (int y = aabb_min.y; y <= static_cast<int>(aabb_max.y); y++)
 			{
-				rasterizeTriangleFrag(primitive, tri_pos, x, y, width, height, frag_buffer, depth_buffer);
+				rasterizeTriangleFrag(primitive, tri_pos, x, y, width, height, frag_buffer, depth_buffer, mutex_buffer);
 			}
 		}
 	}
 }
-
 
 /**
  * Perform rasterization.
@@ -857,14 +902,23 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	initDepthAndMutex << <blockCount2d, blockSize2d >> >(width, height, dev_depth, dev_frag_mutex);
 	
 
 	// TODO: rasterize
 	{
+#if TILE_BASED_RASTERIZATION 
+		// todo
 		dim3 numThreadsPerBlock(128);
 		dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-		kernRasterizePrimitives <<<numBlocksForPrimitives, numThreadsPerBlock >>>(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer, dev_depth);
+		kernRasterizePrimitives << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer, dev_depth, dev_frag_mutex);
+		checkCUDAError("Rasterization");
+#else
+		dim3 numThreadsPerBlock(128);
+		dim3 numBlocksForPrimitives((totalNumPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+		kernRasterizePrimitives << <numBlocksForPrimitives, numThreadsPerBlock >> >(totalNumPrimitives, dev_primitives, width, height, dev_fragmentBuffer, dev_depth, dev_frag_mutex);
+		checkCUDAError("Rasterization");
+#endif
 	}
 
     // Copy depthbuffer colors into framebuffer
@@ -912,6 +966,16 @@ void rasterizeFree() {
 
 	cudaFree(dev_depth);
 	dev_depth = NULL;
+
+#if TILE_BASED_RASTERIZATION
+	cudaFree(dev_tile_primitives);
+	dev_tile_primitives = nullptr;
+
+	cudaFree(dev_tile_prim_counts);
+	dev_tile_prim_counts = nullptr;
+#endif
+	cudaFree(dev_frag_mutex);
+	dev_frag_mutex = nullptr;
 
     checkCUDAError("rasterize Free");
 }
