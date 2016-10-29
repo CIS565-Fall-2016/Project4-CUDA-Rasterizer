@@ -195,6 +195,8 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 	// Initialize shared memory
 	__shared__ glm::vec3 neighbors[BLOCK_WIDTH * BLOCK_WIDTH];
 
+	__syncthreads();
+	
 	if (x < w && y < h) {
 		
 		int local_x = x % BLOCK_WIDTH;
@@ -206,7 +208,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 
 		__syncthreads();
 		
-		/*// Blur
+		// Blur
 		float avg = 1.0f / (11.0f * 11.0f);
 		int num_shared = 0;
 		int num_global = 0;
@@ -232,9 +234,9 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 					final_color += neighbors[local_index + i + j * BLOCK_WIDTH];
 				}
 			}
-		}*/
-		glm::vec3 final_color = neighbors[local_index];
-		framebuffer_out[index] = final_color;// *avg;
+
+		framebuffer_out[index] = final_color * avg;
+
 	}
 }
 
