@@ -50,7 +50,7 @@ The following header flags can be found in `rasterize.cu`:
 - `#define RENDER_DEPTH_ONLY`: Uncomment to render with z-buffer only
 - `#define RENDER_NORMAL_ONLY`: Uncomment to render with eye space normals only
 - `#define BILINEAR_FILTERING`: Uncomment to enable bilinear filtering
-- `#define NOT_USE_TEXTURE`: Uncomment if the model doesn't have a texture file
+- `#define NOT_USE_TEXTURE`: Uncomment if the model doesn't have a texture file (cow, centaur, 2 cylinder engine, wolf, octocat, flower)
 - `#define USE_K_BUFFER`: Uncomment if using independent order transparency with k-buffer
 
 (not working, please ignore)
@@ -65,12 +65,12 @@ The following header flags can be found in `main.cpp`:
 
 |   |   | Triangle count | Source | 
 |---|---|---|---|
-| Duck | ![](renders/duck.png) | | [gltf](gltfs/duck/duck.gltf) |
-| Wolf | ![](renders/videos/wolf.gif) | | [gltf](gltfs/wolf/wolf.gltf) |
-| Octocat | ![](renders/octocat.png) | | [gltf](gltfs/octocat/octocat.gltf) |
-| Centaur | ![](renders/videos/centaur.gif) | | [gltf](gltfs/cent/cent.gltf) |
-| Cesium truck | ![](renders/videos/truck.gif) | | [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
-| Flower | ![](renders/flower_no_bf_culling.png) | | [gltf](gltfs/flower/flower.gltf) |
+| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
+| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
+| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
+| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
+| Cesium truck | ![](renders/videos/truck.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
+| Flower | ![](renders/flower_no_bf_culling.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
 | Cow | ![](renders/cow.png) | 5804 | [gltf](gltfs/cow/cow.gltf) |
 | Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
 |2 cylinder engine| ![](renders/engine.png) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
@@ -134,13 +134,15 @@ Camera at origin        | Camera zoomed in
 
 ![](renders/analysis/head_20s_kernel_time_zooms.png)
 
-While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can scale up really well with high number of triangles.
+As we can see, the `_rasterize` kernel increases significantly in kernel time because each triangle that it has to rasterize now has a larger area with more number of fragments.
 
 Similarly, I profiled the execution time (_microseconds_) with the following features on and off:
 
 ![](renders/analysis/head_20s_kernel_time_with_features.png)
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
+
+While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can still scale up really well with high number of triangles.
 
 # Incomplete feature
 
@@ -156,7 +158,7 @@ When `float` and `int` conversion goes wrong...
 
 ![](renders/bloopers/blooper_checkerboard.png)
 
-![](renders/bloopers/blooper_duck0.png)
+![](renders/bloopers/blooper_duck0.PNG)
 
 ![](renders/bloopers/blooper_duck1.png)
 

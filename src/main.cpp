@@ -15,7 +15,7 @@
 #include <util/tiny_gltf_loader.h>
 
 //#define USE_CENTAUR_MODEL
-#define USE_HEAD_MODEL
+//#define USE_HEAD_MODEL
 //#define USE_ENGINE_MODEL
 
 //-------------------------------
