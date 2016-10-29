@@ -59,7 +59,7 @@ Cow | Di|Engine | Buggy| Flower with Lines
 Pipeline Timing(ms) - VC | Pipeline Timing(ms) - Cow |Pipeline Timing(ms) - Box
 :-------------------------:|:-------------------------:  |:-------------------------:
 ![](imgs/ana1.JPG) | ![](imgs/ana2.JPG) |![](imgs/ana3.JPG)
-
+![](imgs/ana4.JPG) | ![](imgs/ana5.JPG) |![](imgs/ana6.JPG)
 
 #PS: looking for models: just we & just tank
 
