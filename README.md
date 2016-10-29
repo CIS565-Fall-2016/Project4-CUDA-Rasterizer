@@ -87,6 +87,7 @@ k-buffer is a generalized version of the traditional z-buffer for depth. Instead
 k-buffer **ON**        | k-buffer **OFF**
 :-------------------------:|:-------------------------:
 ![](renders/videos/truck_kbuffer.gif)|![](renders/videos/truck.gif)
+![](renders/videos/engine_kbuffer.gif)|![](renders/videos/engine.gif)
 
 # Performance analysis
 
