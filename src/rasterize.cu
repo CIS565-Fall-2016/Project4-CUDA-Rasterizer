@@ -141,7 +141,7 @@ static int * dev_depth = NULL;	// you might need this buffer when doing depth te
 
 __host__ __device__ bool operator<(const Primitive &lhs, const Primitive &rhs)
 {
-    return (lhs.v[0].eyePos.z + lhs.v[1].eyePos.z + lhs.v[2].eyePos.z) < (rhs.v[0].eyePos.z + rhs.v[1].eyePos.z + rhs.v[2].eyePos.z);
+    return (lhs.v[0].eyePos.z + lhs.v[1].eyePos.z + lhs.v[2].eyePos.z) > (rhs.v[0].eyePos.z + rhs.v[1].eyePos.z + rhs.v[2].eyePos.z);
 }
 
 
@@ -1106,6 +1106,7 @@ int mode, bool perspectivecorrect, float xoffset, float yoffset, bool aabbcheck)
                         }
                     }
                 }
+                //break;  // dangerous bold move used after sorting that assumes that no bigger polygons intersect
             }
             //printf("3");
         }
@@ -1429,7 +1430,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     {
         // remove backfaces -------------------------------------------------
         thrust::device_ptr <Primitive> thrust_prims(dev_primitivestmp);
-        //thrust::sort(thrust_prims, thrust_prims + totalNumPrimitives);
+        thrust::sort(thrust_prims, thrust_prims + totalNumPrimitives);
 
         //thrust::device_ptr<Primitive> thrust_prims2(dev_primitivestmp);
         thrust::device_ptr<Primitive> P = thrust::remove_if(thrust_prims, thrust_prims + totalNumPrimitives, is_backface());
@@ -1608,7 +1609,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
     if (testingmode)
     {
-        printf("%f %f %f %f %f\n", ms_vertexTransformAndAssembly,
+        printf("[%f, %f, %f, %f, %f],\n", ms_vertexTransformAndAssembly,
                                    ms_scanline,
                                    ms_aa,
                                    ms_render,
