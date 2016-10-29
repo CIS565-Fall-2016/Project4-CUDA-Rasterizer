@@ -64,8 +64,8 @@ Barycentric coordinates associated with a triangle (as in our case) have values 
 Interpolation over barycentric coordinates simply involves weighting the contribution of each vertex by the value of the barycentric coordinate associated with it.
 
 Here is an image of textures applied to a duck:
-![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/duckAA32.PNG)
 
+![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/duckAA32-2.PNG)
 
 and to a milk truck:
 ![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/milktruckAA32.PNG)
@@ -78,17 +78,21 @@ Since the texture coordinates of the three vertices are repeatedly accessed by t
 Unlike previous efforts, we this time used randomization to perform antialiasing. Antialiasing is a process wherein the value assigned to a pixel is actually the average of several colors calculated from points within the pixel. These points are called "samples" and the technique of taking multiple samples per pixel is known as "supersampling." The result may be seen below:
 
 This is the duck with antialiasing (x32):
-![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/duckAA32-2.PNG)
+
+![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/duckAA32.PNG)
 
 And this is the duck without:
+
 ![alt text] (https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/duckAA1.PNG)
 
 In many ways the contrast is clearest in the case of geometric objects, especially when viewed at an oblique angle:
 
 With antialiasing:
+
 ![alt text](https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/checkerboardAA32.PNG)
 
 Without:
+
 ![alt text](https://github.com/lobachevzky/Project4-CUDA-Rasterizer/blob/master/checkerboardAA1.PNG)
 
 Like texture mapping, antialiasing comes with a performance cost -- probably an even more significant one, actually. In general runtime scales with the number of samples taken per pixel as demonstrated by this chart:
