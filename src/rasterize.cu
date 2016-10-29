@@ -20,11 +20,15 @@
 #include "util/utilityCore.hpp"
 
 
-#define TRIANGLES 1
+#define TRIANGLES 0
 
 #define BILINEAR 1
-#define PERSPECTIVE 0
+#define PERSPECTIVE 1
 #define BLINNPHONG 0
+
+#define POINT 0
+#define LINE 1
+
 
 namespace {
 
@@ -178,7 +182,6 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
     int index = x + (y * w);
 
-
 	auto &curFrag = fragmentBuffer[index];
 	float texWidth = curFrag.diffuseTexWidth;
 	float texHeight = curFrag.diffuseTexHeight;
@@ -213,9 +216,10 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 //	float attenuation = 1.0 / (1.0 + lightAttenuation * pow(distanceToLight, 2));
 
 	float cosangle = glm::max(0.f, glm::dot(curNor, lightDir));
+	framebuffer[index] = glm::vec3(0.f);
 
+#if TRIANGLES
     if (x < w && y < h) {
-		framebuffer[index] = glm::vec3(0.f);
         // framebuffer[index] = fragmentBuffer[index].color; //we choose candidate to render!
 		// TODO: add your fragment shader code here
 		float uFloat = curFrag.texcoord0.x * texWidth; // 0 - 1 to texture space
@@ -267,6 +271,13 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		framebuffer[index] = returnedColorWithoutSpecular;
 	//	framebuffer[index] = returnedColorWithSpecular;
 	}
+
+#elif POINT
+	framebuffer[index] = curFrag.color;
+
+#elif LINE
+	framebuffer[index] = curFrag.color;
+#endif
  }
 
 /**
@@ -821,6 +832,44 @@ float edgeFunction(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c)
 	return (c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0]);
 }
 
+/*
+Lerp & Find Slope to Fill the pixels!
+very good code reference: https://gamedevelopment.tutsplus.com/tutorials/lets-build-a-3d-graphics-engine-rasterizing-line-segments-and-circles--gamedev-8414
+*/
+__device__
+glm::vec3 lerp(const float u, const glm::vec3 &v1, const glm::vec3 &v2) {
+	return (1.f - u) * v1 + u * v2;
+}
+
+__device__
+glm::vec3 lineHelper(int width, int height, Fragment* fragBuffer, const glm::vec3 v1, const glm::vec3 v2) {
+
+	float leftLowerX = glm::max(0.f, glm::min(v1.x, v2.x));
+	float leftLowerY = glm::max(0.f, glm::min(v1.y, v2.y));
+	float rightUpperX = glm::min(float(width - 1), glm::max(v1.x, v2.x));
+	float rightUpeerY = glm::min(float(height - 1), glm::max(v1.y, v2.y));
+
+	if (leftLowerX < rightUpperX && leftLowerY < rightUpeerY) {
+		//fill all pixels along the line
+		float deltaX = rightUpperX - leftLowerX;
+		float deltaY = rightUpeerY - leftLowerY;
+		int length = glm::max(deltaX, deltaY); //lets
+/*
+		/|
+	   / |    deltaY > deltaX, then we choose delta Y
+	  /__|    vectorstart = v1, i = 0;  vectorend = v2, i = 1;
+*/
+/*
+http://www.informit.com/articles/article.aspx?p=2115288&seqNum=6
+potential problems and solution.
+It is commonly used to draw line primitives in a bitmap image (e.g. on a computer screen), as it uses only integer addition.
+*/
+		for (int i = 0; i <= length; i++) {
+			glm::vec3 p = lerp(float(i) / length, v1, v2); // alright in the old way I always change i to zero...
+			int pixelIndex = (int)p.x + (int)p.y * width;  //if I use float, I may have blooper......the lines just become incorrect
+		}
+	}
+}
 
 //Rasterization 
 __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives, Fragment *dev_fragmentBuffer, int *dev_depth, int width, int height) {
@@ -831,18 +880,20 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 		// Shrek says this implementation works better
 		// Let's do triangle first
 		glm::vec3 tri[3] = {glm::vec3(dev_primitives[idx].v[0].pos), glm::vec3(dev_primitives[idx].v[1].pos), glm::vec3(dev_primitives[idx].v[2].pos)};
-		// bounding box for a given triangle
-		AABB aabb = getAABBForTriangle(tri);
-
 		// eye coordinate
-		glm::vec3 triEyePos[3] = {dev_primitives[idx].v[0].eyePos, dev_primitives[idx].v[1].eyePos, dev_primitives[idx].v[2].eyePos};
-		glm::vec3 triEyeNor[3] = {dev_primitives[idx].v[0].eyeNor, dev_primitives[idx].v[1].eyeNor, dev_primitives[idx].v[2].eyeNor};
+		glm::vec3 triEyePos[3] = { dev_primitives[idx].v[0].eyePos, dev_primitives[idx].v[1].eyePos, dev_primitives[idx].v[2].eyePos };
+		glm::vec3 triEyeNor[3] = { dev_primitives[idx].v[0].eyeNor, dev_primitives[idx].v[1].eyeNor, dev_primitives[idx].v[2].eyeNor };
 		// texture coordinate  
-		glm::vec2 triTexcoord0[3] = {dev_primitives[idx].v[0].texcoord0, dev_primitives[idx].v[1].texcoord0, dev_primitives[idx].v[2].texcoord0};
+		glm::vec2 triTexcoord0[3] = { dev_primitives[idx].v[0].texcoord0, dev_primitives[idx].v[1].texcoord0, dev_primitives[idx].v[2].texcoord0 };
+		// bounding box for a given triangle
 		// test color
 		glm::vec3 color(1.f, 0.5f, 0.5f);
-		// pixel index
 		int pixelIndex;
+
+#if TRIANGLES
+		// Triangle 
+		AABB aabb = getAABBForTriangle(tri);
+		// pixel index
 		int Xmin = glm::max((int)aabb.min.x, 0);
 		int Xmax = glm::min((int)aabb.max.x, width - 1);
 		int Ymin = glm::max((int)aabb.min.y, 0);
@@ -877,31 +928,55 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 
 		//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
 		//https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
+
 #if PERSPECTIVE
-						
+
 						float demon[3] = { 1.f / triEyePos[0].z, 1.f / triEyePos[1].z, 1.f / triEyePos[2].z };
 						glm::vec3 uDivZ = glm::vec3(curPixelBaryCoord.x * demon[0], curPixelBaryCoord.y * demon[1], curPixelBaryCoord.z * demon[2]);
 						float depth = (1.0f / (uDivZ.x + uDivZ.y + uDivZ.z));
 						glm::vec2 persTexture = uDivZ.x * triTexcoord0[0] + uDivZ.y * triTexcoord0[1] + uDivZ.z * triTexcoord0[2];
 						dev_fragmentBuffer[pixelIndex].texcoord0 = persTexture * depth;
 
-//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
-					//  triTexcoord0[0] /= tri[0].z; 
-					//	triTexcoord0[1] /= tri[1].z;
-					//	triTexcoord0[2] /= tri[2].z;
-					//	glm::vec2 demon[3] = { triTexcoord0[0], triTexcoord0[1], triTexcoord0[2] };
-					//	tri[0].z = 1.f / tri[0].z;
-					//	tri[1].z = 1.f / tri[1].z;
-					//	tri[2].z = 1.f / tri[2].z;
+						//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
+						//  triTexcoord0[0] /= tri[0].z; 
+						//	triTexcoord0[1] /= tri[1].z;
+						//	triTexcoord0[2] /= tri[2].z;
+						//	glm::vec2 demon[3] = { triTexcoord0[0], triTexcoord0[1], triTexcoord0[2] };
+						//	tri[0].z = 1.f / tri[0].z;
+						//	tri[1].z = 1.f / tri[1].z;
+						//	tri[2].z = 1.f / tri[2].z;
 
 #else
 						dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
 #endif
-
 					}
-				}
+	            }
+             }
+		  }
+#elif POINT
+		int prob = 0;
+	//	if (dev_primitives[idx].primitiveType == Triangle) {
+			while (prob < 3)  {
+				int x = (int)tri[prob].x;
+				int y = (int)tri[prob].y;
+				pixelIndex = x + y * width;
+				if (x < 0 || x > width - 1 || y < 0 || y > width - 1) continue;
+				//dev_fragmentBuffer[pixelIndex].color = color;
+				dev_fragmentBuffer[pixelIndex].color = glm::vec3(float(x) / width, 0.f, float(x) / width);
+				prob++;
 			}
-		}
+	//	}
+#elif LINE
+		lineHelper(width, height, dev_fragmentBuffer, tri[0], tri[1]);
+		lineHelper(width, height, dev_fragmentBuffer, tri[1], tri[2]);
+		lineHelper(width, height, dev_fragmentBuffer, tri[0], tri[2]);
+#endif
+
+
+
+
+
+	
 		
 //*****************************************//
 	}
