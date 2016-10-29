@@ -7,7 +7,7 @@ CUDA Rasterizer
 * Tested on: Windows 10, AMD Fx-8320 @ 3.50GHz 8GB, GTX 1060 3GB (Personal Desktop)
 
 ![Rasterizer](img/truck_lines.PNG)
-#### About
+### About
 I have implemented an efficient CUDA rasterizer with Blinn-Phong shading, support for triangles, lines, and points, and an efficient blur using shared memory. The basic overview of the pipeline I used is as follows: 
 
 1. Transform vertices from world space to screen space
@@ -25,11 +25,11 @@ Measured using cuda events
 Side note: random speckles in image were caused by depth testing/lock issue.
 Using a mutex array solved it.
 
-#### Shading
+### Shading
 Blinn-phong used from https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model
+![blinn-phong](img/truck_shaded.PNG)
 
-
-#### Blur
+### Blur
 72-72 ms per frame - 21x21 - 8x8 blocks
 60-61 ms per frame - 21x21 - 16x16 blocks
 16x16 shared memory 
@@ -41,11 +41,13 @@ With shared memory...13ms per frame -- WRONG (bug in code)
 - 21x21 blur is bigger than blocks, so very little shared memory used
 
 11x11 blur
-- 4.23 - 4.25ms, 
-
-#### Performance/Optimizations
+- 4.23 - 4.25ms
 
 
+![duck](img/Duck_blur_21)
+### Performance/Optimizations
+
+![duck](img/Duck_shared_memory.PNG)
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)

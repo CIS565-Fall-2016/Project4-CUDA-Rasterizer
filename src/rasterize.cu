@@ -1007,7 +1007,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	cudaEventRecord(effects_start);
 	
 	// Blur
-	blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
+	//blur << <blockCount2d, blockSize2d >> >(width, height, dev_preeffectbuffer, dev_framebuffer);
 
 	cudaEventRecord(effects_stop);
 	cudaEventSynchronize(effects_stop);
@@ -1018,7 +1018,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
 
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_preeffectbuffer);
     checkCUDAError("copy render result to pbo");
 }
 
