@@ -45,12 +45,18 @@ We first perform 4xSSAA to remove most of the rough edges. Although the performa
 
 ![](/img/truck_ssaa_comp.png)
 
+No anti-aliasing compared to SSAA.
+
 ### MSAA
 We also perform 4xMSAA to remove the rough edges. We could observe MSAA detects the edges of different fragments, as most of the rough edges occurs on those edges. Running super sampling on only those pixels greatly reduce the performance cost compared to SSAA.
 
 ![](/img/truck_msaa_3.png)
 
+Pixels in red are those whose super sample positions lie in different fragments. 
+
 ![](/img/truck_msaa_comp.png)
+
+No anti-aliasing compared to MSAA.
 
 ## Performance Analysis
 
