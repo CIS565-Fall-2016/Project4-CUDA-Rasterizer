@@ -747,6 +747,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 
 #if (USETEXTURE==1)
 		int fixedDepth;
+		printf("%d \n", xmax - xmin);
 		for (int x = xmin; x <= xmax; x++){
 			for (int y = ymin; y <= ymax; y++){ 
 				int pid = x + y*width;
@@ -989,6 +990,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	// Copy framebuffer into OpenGL buffer for OpenGL previewing
 	sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, width, height, dev_framebuffer);
 	checkCUDAError("copy render result to pbo");
+
+	printf("iter %d \n", iter);
 }
 
 /**
