@@ -17,6 +17,8 @@
 #include "rasterize.h"
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
+
 
 namespace {
 
@@ -81,9 +83,11 @@ namespace {
 		int diffuseTexWidth;
 		int diffuseTexHeight;
 		int diffuseTexComponent;
+		bool hasColor;
 		Fragment()
 		{
 			dev_diffuseTex = NULL;
+			hasColor = false;
 		}
 		// ...
 	};
@@ -197,17 +201,23 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
     int index = x + (y * w);
 	glm::vec3 lightPos(5.0f, 5.0f, 5.0f);
 	Fragment cacheFragment = fragmentBuffer[index];
-    if (x < w && y < h) {
-		float diffuseTerm = 0.6* glm::clamp(glm::dot(cacheFragment.eyeNor, lightPos), 0.0f, 1.0f);
-		float ambientTerm = 0.4f;
+	if (x < w && y < h && cacheFragment.hasColor) {
+		float diffuseTerm = 0.6 * glm::clamp(glm::dot(cacheFragment.eyeNor, lightPos), 0.0f, 1.0f);
+		float ambientTerm = 0.6f;
+		glm::vec3 L = glm::normalize(lightPos - cacheFragment.eyePos);
+		glm::vec3 N = cacheFragment.eyeNor;
+		glm::vec3 V = glm::normalize(-cacheFragment.eyePos);
+		glm::vec3 H = glm::normalize(V + L);
+		//printf("norm:%f %f %f\nH:%f %f %f\n\n", L[0], L[1], L[2], 
+		//	cacheFragment.eyePos[0], cacheFragment.eyePos[1], cacheFragment.eyePos[2]);
 		glm::vec3 textureColor;// = glm::vec3(1.0f, 1.0f, 1.0f);
 		if (cacheFragment.dev_diffuseTex != NULL)
 		{
 			//if (!(cacheFragment.diffuseTexWidth>0 && cacheFragment.diffuseTexHeight>0 & cacheFragment.diffuseTexComponent>0))
 			//	printf("com:%d %d %d\n", cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
-			//textureColor = textureColor = cacheFragment.color * (diffuseTerm + ambientTerm);//
+			textureColor = cacheFragment.color * (diffuseTerm + ambientTerm);//
 			//textureColor = getTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
-			textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
+			//textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
 			//textureColor = glm::vec3(cacheFragment.texcoord0, 0.0f);
 			//printf("coord:%f %f\ncolor:%f %f %f\n\n", cacheFragment.texcoord0[0], cacheFragment.texcoord0[1], textureColor[0], textureColor[1], textureColor[2]);
 			
@@ -220,10 +230,14 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		//printf("%f %f\n", fragmentBuffer[index].texcoord0[0], fragmentBuffer[index].texcoord0[1]);
         //framebuffer[index] = fragmentBuffer[index].color * (diffuseTerm + ambientTerm);// * textureColor;
 		//framebuffer[index] = fragmentBuffer[index].color;// * (diffuseTerm + ambientTerm);
-		framebuffer[index] = textureColor * (diffuseTerm + ambientTerm);
+		//framebuffer[index] = textureColor * (diffuseTerm + ambientTerm);
+		framebuffer[index] = textureColor * (diffuseTerm + ambientTerm) + pow(max(0.0f, glm::dot(N, H)), 200.0f);
+		//printf("%f\n", pow(max(0.0f, glm::dot(N, H)), 200.0f));
 		// TODO: add your fragment shader code here
 
     }
+	else
+		framebuffer[index] = glm::vec3(0.0f, 0.0f, 0.0f);
 }
 
 /**
@@ -257,6 +271,7 @@ void initDepth(int w, int h, int * depth, Fragment *f)
 		int index = x + (y * w);
 		depth[index] = INT_MAX;
 		f[index].z = 2.0f;
+		f[index].hasColor = false;
 		//f[index].texcoord0 = glm::vec2(-1.0f, -1.0f);
 	}
 }
@@ -771,8 +786,8 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		//dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
 		pid = iid / 3;
 		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3] = primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = c[iid % 3];
-		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = glm::vec3(1.0f, 1.0f, 1.0f);
+		dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = c[iid % 3];
+		//dev_primitives[pid + curPrimitiveBeginId].v[iid % 3].col = glm::vec3(1.0f, 1.0f, 1.0f);
 		//printf("%d\n", pid + curPrimitiveBeginId);
 		// TODO: other primitive types (point, line)
 	}
@@ -795,9 +810,6 @@ __device__ void print(glm::vec4 v)
 {
 	printf("%f %f %f %f\n", v[0], v[1], v[2], v[3]);
 }
-
-#define min(a,b) ((a) < (b) ? (a) : (b))
-#define max(a,b) ((a) > (b) ? (a) : (b))
 
 __device__ void clamp(int &i, int a, int b)
 {
@@ -1015,6 +1027,7 @@ __global__ void rasterizer(Fragment *fragment, int *depth, Primitive *primitive,
 								if (newDepth < fragment[index].z)
 								{
 									fragment[index].z = newDepth;
+									fragment[index].hasColor = true;
 									//printf("HERE");
 									//printf("%d\n", index);
 									//fragment[index].color = glm::vec3(-newDepth, -newDepth, -newDepth);
@@ -1023,8 +1036,9 @@ __global__ void rasterizer(Fragment *fragment, int *depth, Primitive *primitive,
 //	pid, primitive[pid].v[1].col[0],  primitive[pid].v[1].col[1], primitive[pid].v[1].col[2],
 //	pid, primitive[pid].v[2].col[0],  primitive[pid].v[2].col[1], primitive[pid].v[2].col[2]);
 //									fragment[index].color = glm::dot(baryCoords, glm::vec3(cachePrimitive.v[0].pos.z, cachePrimitive.v[1].pos.z, cachePrimitive.v[2].pos.z));
-									//fragment[index].eyePos[0] = (float)fDepth * (t0 * cachePrimitive.v[0].pos[0] + t1 * cachePrimitive.v[1].pos[0] + t2 * cachePrimitive.v[2].pos[0]);
-									//fragment[index].eyePos[1] = (float)fDepth * (t0 * cachePrimitive.v[0].pos[1] + t1 * cachePrimitive.v[1].pos[1] + t2 * cachePrimitive.v[2].pos[1]);
+									fragment[index].eyePos[0] = (float)fDepth * (t0 * cachePrimitive.v[0].pos[0] + t1 * cachePrimitive.v[1].pos[0] + t2 * cachePrimitive.v[2].pos[0]);
+									fragment[index].eyePos[1] = (float)fDepth * (t0 * cachePrimitive.v[0].pos[1] + t1 * cachePrimitive.v[1].pos[1] + t2 * cachePrimitive.v[2].pos[1]);
+									fragment[index].eyePos[2] = fDepth;
 									fragment[index].eyeNor = (float)fDepth * (t0 * cachePrimitive.v[0].eyeNor + t1 * cachePrimitive.v[1].eyeNor + t2 * cachePrimitive.v[2].eyeNor);
 									fragment[index].texcoord0 = (float)fDepth * (t0 * cachePrimitive.v[0].texcoord0 + t1 * cachePrimitive.v[1].texcoord0 + t2 * cachePrimitive.v[2].texcoord0);
 									//fragment[index].texcoord0 = baryCoords[0] * cachePrimitive.v[0].texcoord0 + baryCoords[1] * cachePrimitive.v[1].texcoord0 + baryCoords[2] * cachePrimitive.v[2].texcoord0;

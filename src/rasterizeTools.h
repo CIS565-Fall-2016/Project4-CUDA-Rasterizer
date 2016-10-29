@@ -159,3 +159,6 @@ __host__ __device__ static
 		//return scale * c0;
 		return scale * ((c0 * u_oppsite + c1 * u_ratio) * v_oppsite + (c2 * u_oppsite + c3 * u_ratio) * v_ratio);
 }
+
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#define max(a,b) ((a) > (b) ? (a) : (b))

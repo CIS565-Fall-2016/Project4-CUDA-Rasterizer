@@ -104,11 +104,11 @@ void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
     dptr = NULL;
-
-	glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
-		scale * ((float)width / (float)height),
-		-scale, scale, 1.0, 1000.0);
-
+	y_angle += 0.01f;
+	//glm::mat4 P = glm::frustum<float>(-scale * ((float)width) / ((float)height),
+	//	scale * ((float)width / (float)height),
+	//	-scale, scale, 1.0, 1000.0);
+	glm::mat4 P = glm::perspective(3.14159f / 3, 1.0f, 0.1f, 1000.0f);
 	glm::mat4 V = glm::mat4(1.0f);
 
 	glm::mat4 M =
