@@ -14,13 +14,13 @@
 #include <thrust/random/uniform_real_distribution.h>
 #include <iostream>
 #include <fstream>
-#define USETEXTURE 1
+#define USETEXTURE 0
 #define USELIGHT 1 && USETEXTURE
 #define USEBILINFILTER 1 && USETEXTURE
 #define USEPERSPECTIVECORRECTION 1 && USETEXTURE
 #define USETILE 0
-#define USELINES 1  && 1-USETEXTURE
-#define USEPOINTS 0 && 1-USETEXTURE
+#define USELINES 0  && 1-USETEXTURE
+#define USEPOINTS 1 && 1-USETEXTURE
 #define SPARSITY 20 //sparsity of point cloud (if on)
 #define DOTIMING 1
  
@@ -798,7 +798,7 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		devRasterizeLine(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments);
 #else
 		//VertexOut & vertex1 = curPrim.v[1]; 
-		thrust::minstd_rand rng; 
+		thrust::minstd_rand rng;
 		thrust::uniform_real_distribution<float> dist(0, 10);
 		rng.discard(randomnum);
 
@@ -823,16 +823,18 @@ __global__ void kernRasterize(int n, Primitive * primitives, int* depths, int wi
 		//	color = glm::normalize(color);
 		//	fragments[ppid].color = color;
 		//}
-		VertexOut & vertex1 = curPrim.v[1];
-		VertexOut & vertex2 = curPrim.v[2];
-		glm::vec3 color = vertex0.col;
-		color += curPrim.v[0].eyeNor;
-		color = glm::normalize(color);
-		//int stepsize = (int)glm::cos((float)randomnum);
-		
-		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
-		devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
-		devRasterizePoints(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments, SPARSITY);
+		if (curPrim.primitiveType == TINYGLTF_MODE_POINTS){
+			VertexOut & vertex1 = curPrim.v[1];
+			VertexOut & vertex2 = curPrim.v[2];
+			glm::vec3 color = vertex0.col;
+			color += curPrim.v[0].eyeNor;
+			color = glm::normalize(color);
+			//int stepsize = (int)glm::cos((float)randomnum);
+
+			devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
+			devRasterizePoints(glm::vec3(vertex0.pos), glm::vec3(vertex1.pos), color, width, height, fragments, SPARSITY);
+			devRasterizePoints(glm::vec3(vertex2.pos), glm::vec3(vertex0.pos), color, width, height, fragments, SPARSITY);
+		}
 #endif
 		//}
 	}

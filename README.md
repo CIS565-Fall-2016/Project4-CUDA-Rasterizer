@@ -41,11 +41,13 @@ Here is a demo of rasterizing lines.
 
 
 
-Duck with Points (dense) | Duck with Points (sparse)
-:-------------------------:|:-------------------------: 
-![](imgs/duck3.gif) | ![](imgs/duck4.gif)
+Duck with Points (dense) | Duck with Points (sparse) |Truck with Points (sparse)
+:-------------------------:|:-------------------------: |:-------------------------: 
+![](imgs/duck3.gif) | ![](imgs/duck4.gif) | ![](imgs/truck3.gif)
 
-Here is a demo of rasterizing points; the user is allowed to specify the sparsity of the point cloud on the top of raterize.cu.
+Here is a demo of rasterizing points;
+Bonus: I am not just rendering the primitive points, it's not beautiful. Sparse points are interpolated near the primitive points, but the
+user is allowed to control the sparsity of points though on the top of raterize.cu.. 
 
 Checkerboard with perspective correction | Checkerboard without perspective correction
 :-------------------------:|:-------------------------: 
