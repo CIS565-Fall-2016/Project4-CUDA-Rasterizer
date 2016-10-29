@@ -10,27 +10,6 @@ CUDA Rasterizer
 
 ![](renders/videos/engine_kbuffer.gif)
 
-### Scenes
-
-
-|   |   | Triangle count | Source | 
-|---|---|---|---|
-| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
-| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
-| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
-| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
-| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
-| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
-| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
-| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
-
-Renders of normal and depth attributes:
-
-Diffuse        | Normal | Depth |
-:-------------------------:|:-------------------------:|:-------------------------:
-![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
-
 ### Features
 
 - [Perspective correct UV texture mapping with bilinear filtering](## UV Texture Mapping)
@@ -131,6 +110,26 @@ Backface culling is implemented, but without stream compaction. I only include h
 Flower with backface culling        | Flower with backface culling
 :-------------------------:|:-------------------------:
 ![](renders/flower_bf_culling.png)|![](renders/flower_no_bf_culling.png)
+
+# Renders
+
+|   |   | Triangle count | Source | 
+|---|---|---|---|
+| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
+| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
+| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
+| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
+| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
+| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
+| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
+| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
+|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+
+Renders of normal and depth attributes:
+
+Diffuse        | Normal | Depth |
+:-------------------------:|:-------------------------:|:-------------------------:
+![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
 
 # Bonus artistic renders!
 
