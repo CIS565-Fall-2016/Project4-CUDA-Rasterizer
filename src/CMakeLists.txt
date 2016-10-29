@@ -1,3 +1,4 @@
+message("src")
 set(SOURCE_FILES
     "rasterize.cu"
     "rasterize.h"

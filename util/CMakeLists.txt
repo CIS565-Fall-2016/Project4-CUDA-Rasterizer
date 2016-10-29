@@ -1,3 +1,4 @@
+message("util")
 set(SOURCE_FILES
     "utilityCore.hpp"
     "utilityCore.cpp"

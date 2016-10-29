@@ -1,3 +1,4 @@
+message("GLM")
 set(NAME glm_dummy)
 
 file(GLOB ROOT_SOURCE *.cpp)
