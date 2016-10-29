@@ -6,53 +6,11 @@ CUDA Rasterizer
 * Trung Le
 * Windows 10 Home, i7-4790 CPU @ 3.60GHz 12GB, GTX 980 Ti (Person desktop)
 
-# Device information
-
-### General information for CUDA device
-- Device name: GeForce GTX 980 Ti
-- Compute capability: 5.2
-- Compute mode: Default
-- Clock rate: 1076000
-- Integrated: 0
-- Device copy overlap: Enabled
-- Kernel execution timeout: Enabled
- 
-### Memory information for CUDA device
-
-- Total global memory: 6442450944
-- Total constant memory: 65536
-- Multiprocessor count: 22
-- Shared memory per multiprocessor: 98304
-- Registers per multiprocessor: 65536
-- Max threads per multiprocessor: 2048
-- Max grid dimensions: [2147483647, 65535, 65535]
-- Max threads per block: 1024
-- Max registers per block: 65536
-- Max thread dimensions: [1024, 1024, 64]
-- Threads per block: 512
-
 # Rasterizer
 
-# Scenes
+![](renders/videos/engine_kbuffer.gif)
 
-
-|   |   | Triangle count | Source | 
-|---|---|---|---|
-| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
-| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
-| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
-| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
-| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
-| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
-| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
-| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
-|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
-
-Renders of normal and depth attributes:
-
-Diffuse        | Normal | Depth |
-:-------------------------:|:-------------------------:|:-------------------------:
-![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
+------------
 
 ### Features
 
@@ -68,6 +26,7 @@ The following header flags can be found in `rasterize.cu`:
 - `#define BILINEAR_FILTERING`: Uncomment to enable bilinear filtering
 - `#define NOT_USE_TEXTURE`: Uncomment if the model doesn't have a texture file (cow, centaur, 2 cylinder engine, wolf, octocat, flower)
 - `#define USE_K_BUFFER`: Uncomment if using independent order transparency with k-buffer
+- `#define SHARED_MEMORY_MATERIALS`: Uncomment to use shared memory for materials
 
 (not working, please ignore)
 - ~~`#define BACKFACE_CULLING`~~
@@ -76,6 +35,7 @@ The following header flags can be found in `main.cpp`:
 - `#define USE_CENTAUR_MODEL`: Uncomment if using the `cent.gltf` model
 - `#define USE_HEAD_MODEL`: Uncomment if using the `head.gltf` model
 - `#define USE_ENGINE_MODEL`: Uncomment if using the `2_cylinder_engine.gltf` model
+- `#define USE_TURNTABLE`: Uncomment to rotate model on a turntable
 
 ## UV Texture Mapping
 ### 1. Perspective correct
@@ -110,10 +70,15 @@ k-buffer is a generalized version of the traditional z-buffer for depth. Instead
 k-buffer **ON**        | k-buffer **OFF**
 :-------------------------:|:-------------------------:
 ![](renders/videos/truck_kbuffer.gif)|![](renders/videos/truck.gif)
+![](renders/videos/engine_kbuffer.gif)|![](renders/videos/engine.gif)
+
+To make sure that colors from overlapping fragments are accumulated correctly, `atomicAdd` is used to synchronize across all threads that attempt to accumulate to the `dev_depthAccum` buffer.
+
+---------------
 
 # Performance analysis
 
- I profiled using NSight Performance Analysis tool with the following parameters:
+_All profiling was done using NSight Performance Analysis tool with the following parameters_
 
 | Parameters| Value |
 |---|---|
@@ -122,13 +87,16 @@ k-buffer **ON**        | k-buffer **OFF**
 | Resolution | 800x800
 | Kernel launches | 1091 |
 
-The following graph shows the execution time (_microseconds_) for various kernels:
+### Kernel execution time
 
-![](renders/videos/head.gif)
+        | Scene used
+:-------------------------:|:-------------------------:
+![](renders/analysis/head_20s_kernel_time.png)|![](renders/videos/head.gif)
 
-![](renders/analysis/head_20s_kernel_time.png)
 
 The bottleneck happens in the `_rasterize` kernel because we have to loop through each pixel in every triangle's bounding box. Therefore, each `_rasterize` kernel is bounded by O(n<sup>2</sup>), where n is the size of the triangle's bounding box in screen space. This means that a large triangle with a large bounding box will have a performance hit. To compare, I profiled a scene with the head model where the camera is located at the origin, versus a scene where the camera is zoomed in.
+
+### A close up at `_rasterize`
 
 Camera at origin        | Camera zoomed in
 :-------------------------:|:-------------------------:
@@ -138,13 +106,41 @@ Camera at origin        | Camera zoomed in
 
 As we can see, the `_rasterize` kernel increases significantly in kernel time because each triangle that it has to rasterize now has a larger area with more number of fragments.
 
-Similarly, I profiled the execution time (_microseconds_) with the following features on and off:
+### Kernel execution time vs. features
 
-![](renders/analysis/head_20s_kernel_time_with_features.png)
+_Profile is done by enabling each feature one by one_
+
+|        | Scene used
+:-------------------------:|:-------------------------:
+![](renders/analysis/head_20s_kernel_time_with_features.png)|![](renders/videos/head.gif)
 
 As expected, bilinear filtering and k-buffer occupy more device time. However, the performace decrease isn't significant enough. For the k-buffer, instead of using a linked list of depth buffers, I only created an additional buffer of accumulated alpha colors of overlapping fragments. This optimized for having to look several depth buffer, which could make memory read and write from global buffer slower. 
 
-While a rasterizer's rendering performance is bounded by the number of fragments we have to compute, a pathtracer is bounded by the number of triangles. In that sense, rasterizer can still scale up really well with high number of triangles.
+### Registers used vs. kernel
+
+![](renders/analysis/register_usage.png)
+
+`_rasterize` and (interestingly) `_vertexTransformAndAssembly` take up a large number of registers, 112 and 95, respectively. This significantly severes the ability for GPU scheduler to optimize the number of active blocks per kernel launch. 
+
+### Shared memory for materials 
+
+To optimize for `render` kernel global memory read from materials list, this data is copied over to __shared__ memory. In the beginning of the `render` kernel call, threads within the same block will copy over the materials data from globabal memory to __shared__ memory. A CUDA `__syncthreads()` is used to make sure this shared data is initialized properly before used.
+
+_The following uses three different scene with varying number of materials and ran for 20,000ms each:_
+
+1 material | 5 materials | 115 materials
+:-------------------------:|:-------------------------:|:-------------------------:
+![](renders/videos/duck.gif)| ![](renders/videos/truck.gif)| ![](renders/videos/engine.gif)|
+
+Let's take a look at the kernel analysis for `render`:
+
+| Kernel time  | Occupancy
+:-------------------------:|:-------------------------:
+![](renders/analysis/shared_memory_materials_kernel_time.png)|![](renders/analysis/shared_memory_materials_occupancy.png)|
+
+Looks quite bad! It seems that having sharing memory isn't that great at all. The occupancy for active warps are quite low. This is due to the fact that an additional step is required to transfer the materials data over from global so shared memory with a thread sync. 
+
+----------------
 
 # Incomplete feature
 
@@ -153,6 +149,28 @@ Backface culling is implemented, but without stream compaction. I only include h
 Flower with backface culling        | Flower with backface culling
 :-------------------------:|:-------------------------:
 ![](renders/flower_bf_culling.png)|![](renders/flower_no_bf_culling.png)
+
+--------------------------------
+
+# Renders
+
+|   |   | Triangle count | Source | 
+|---|---|---|---|
+| Duck | ![](renders/duck.png) | 4212 | [gltf](gltfs/duck/duck.gltf) |
+| Wolf | ![](renders/videos/wolf.gif) | 18342 | [gltf](gltfs/wolf/wolf.gltf) |
+| Octocat | ![](renders/videos/octocat.gif) | 15708 | [gltf](gltfs/octocat/octocat.gltf) |
+| Centaur | ![](renders/videos/centaur.gif) | 34670 | [gltf](gltfs/cent/cent.gltf) |
+| Cesium truck | ![](renders/videos/truck_800_800.gif) | 3624| [gltf](gltfs/CesiumMilkTruck/CesiumMilkTruck.gltf) |
+| Flower | ![](renders/flower_800_800.png) | 640 | [gltf](gltfs/flower/flower.gltf) |
+| Cow | ![](renders/videos/cow.gif) | 5804 | [gltf](gltfs/cow/cow.gltf) |
+| Head | ![](renders/videos/head.gif) | 17684 | [gltf](gltfs/head/head.gltf) |
+|2 cylinder engine| ![](renders/videos/engine.gif) | 121496 | [gltfs](gltf/2_cylinder_engine/2_cylinder_engine.gltf) |
+
+Renders of normal and depth attributes:
+
+Diffuse        | Normal | Depth |
+:-------------------------:|:-------------------------:|:-------------------------:
+![](renders/videos/centaur.gif)|![](renders/videos/centaur_normal.gif)|![](renders/videos/centaur_depth.gif)
 
 # Bonus artistic renders!
 
@@ -167,6 +185,35 @@ When `float` and `int` conversion goes wrong...
 When your ghost friend won't stop staring at you :-)
 
 ![](renders/videos/head_kbuffer.gif)
+
+--------------------------------
+
+# Device information
+
+### General information for CUDA device
+- Device name: GeForce GTX 980 Ti
+- Compute capability: 5.2
+- Compute mode: Default
+- Clock rate: 1076000
+- Integrated: 0
+- Device copy overlap: Enabled
+- Kernel execution timeout: Enabled
+ 
+### Memory information for CUDA device
+
+- Total global memory: 6442450944
+- Total constant memory: 65536
+- Multiprocessor count: 22
+- Shared memory per multiprocessor: 98304
+- Registers per multiprocessor: 65536
+- Max threads per multiprocessor: 2048
+- Max grid dimensions: [2147483647, 65535, 65535]
+- Max threads per block: 1024
+- Max registers per block: 65536
+- Max thread dimensions: [1024, 1024, 64]
+- Threads per block: 512
+
+--------------------------------
 
 ### Credits
 
