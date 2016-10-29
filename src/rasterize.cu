@@ -24,9 +24,10 @@
 #define MAX_DEPTH 10000.0f
 #define DEPTH_QUANTUM (float)(INT_MAX / MAX_DEPTH)
 #define getIndex(x, y, width) ((x) + (y) * (width))
-#define samplesPerPixel 16
-#define ambientLight 0.1
-#define tuneShade 0
+#define SAMPLES_PER_PIXEL 4
+#define AMBIENT_LIGHT 0.1
+#define TUNE_SHADE 0
+#define DEFAULT_COLOR (glm::vec3(0.5))
 
 
 #define DEBUG 1
@@ -37,7 +38,7 @@
 #define debugMinMax(...) if (DEBUG == 1 && id == 320) { printf (__VA_ARGS__); }
 #define debugDepthsId 369228
 #define debugDepths(...) if (DEBUG == 1 && id == debugDepthsId) { printf (__VA_ARGS__); }
-//#define debugBoard(...) if (DEBUG == 1 && id == ) { printf (__VA_ARGS__); }
+#define debugBox(...) if (DEBUG == 1 && id == 305194) { printf (__VA_ARGS__); }
 
 #define range(i, start, stop) for (i = start; i < stop; i++)
 #define SHOW_TEXTURE 0
@@ -162,7 +163,7 @@ void _sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
 void rasterizeInit(int w, int h) {
   width = w;
   height = h;
-  int numSamples = samplesPerPixel * width * height;
+  int numSamples = SAMPLES_PER_PIXEL * width * height;
 
   cudaFree(dev_fragmentBuffer);
   cudaMalloc(&dev_fragmentBuffer, numSamples * sizeof(Fragment));
@@ -181,7 +182,7 @@ void rasterizeInit(int w, int h) {
 __global__
 void _initDepth(int length, int *depth)
 {
-  if (IDx < length * samplesPerPixel)
+  if (IDx < length * SAMPLES_PER_PIXEL)
   {
     depth[IDx] = INT_MAX;
   }
@@ -685,7 +686,7 @@ if (vertexParts.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
 }
 
 __device__
-float getFragmentDepth(glm::vec3 bcCoord, glm::vec3 tri[3]) {
+unsigned int getFragmentDepth(glm::vec3 bcCoord, glm::vec3 tri[3]) {
   // get depth of fragment represented as an integer
   int i;
   float depth = 0;
@@ -716,7 +717,8 @@ __device__
 __global__
 void _rasterize(int n_primitives, int height, int width,
 const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
-  if (IDx >= n_primitives) return;
+  if (IDx >= n_primitives) return; 
+
   int id = IDx;
 
   int i, y, x, offset;
@@ -726,18 +728,19 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
     // get coordinates of tri points
     tri[i] = glm::vec3(primitive.v[i].screenPos);
   }
-
   thrust::uniform_real_distribution<float> u01(0, 1);
   AABB aabb = getAABBForTriangle(tri);
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
       thrust::default_random_engine seed(getIndex(x, y, width));
-      range(offset, 0, samplesPerPixel) {
-        int index = samplesPerPixel * getIndex(width - x, height - y, width) + offset;
+      range(offset, 0, SAMPLES_PER_PIXEL) {
+        int index = SAMPLES_PER_PIXEL * getIndex(width - x, height - y, width) + offset;
+		  int id = index;
         glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
         glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
+
         if (isBarycentricCoordInBounds(barycentricCoord)) {
           unsigned int depth = getFragmentDepth(barycentricCoord, tri);
 
@@ -755,19 +758,21 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
   range(y, aabb.min.y, aabb.max.y) {
     range(x, aabb.min.x, aabb.max.x) {
       thrust::default_random_engine seed(getIndex(x, y, width));
-      range(offset, 0, samplesPerPixel) {
-        int index = samplesPerPixel *  getIndex(width - x, height - y, width) + offset;
+      range(offset, 0, SAMPLES_PER_PIXEL) {
+
+        int index = SAMPLES_PER_PIXEL *  getIndex(width - x, height - y, width) + offset;
         glm::vec2 screenPos = glm::vec2(x + u01(seed), y + u01(seed));
 
         // determine if screenPos is inside polygon
         glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, screenPos);
         if (isBarycentricCoordInBounds(barycentricCoord)) {
-          float depth = getFragmentDepth(barycentricCoord, tri);
+
+          unsigned int depth = getFragmentDepth(barycentricCoord, tri);
+          //debug0("depth = %u, min depth = %u, index = %d\n", depth, depths[index], index);
+          //debug("%f/%f \n", depth, INT_MAX);
 
           // if the sample is not occluded
-          if ((unsigned int)depth == depths[index]) {
-            //debug(".");
-            //debugDepths("depth=%u\n", depth);
+          if (depth == depths[index]) {
             Fragment &fragment = fragments[index];
 
 
@@ -783,21 +788,22 @@ const Primitive *primitives, unsigned int *depths, Fragment *fragments) {
               fragment.viewNorm += weight * v.viewNorm;
               fragment.viewPos += weight * v.viewPos;
 
-              float texWeight = weight / v.viewPos.z;
+              float texWeight = weight / (v.viewPos.z + EPSILON);
               texcoord += texWeight * v.texcoord0;
               texWeightNorm += texWeight;
             }
 
             // get the color using texcoord
-            texcoord /= texWeightNorm;
+            texcoord /= (texWeightNorm + EPSILON);
             glm::vec2 texRes = primitive.texRes;
             glm::vec2 scaledCoord = texcoord * glm::vec2(texRes.x, texRes.y);
             int tid = 3 * getIndex((int)scaledCoord.x, (int)scaledCoord.y, texRes.x);
             TextureData *tex = primitive.diffuseTex; 
-            glm::vec3 color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
-
-            //atomicAddVec3(fragment.color, color);
-            fragment.color = color;
+			if (tex) {
+				fragment.color = glm::vec3(tex[tid + 0], tex[tid + 1], tex[tid + 2]) / 255.0f;
+			} else {
+				fragment.color = DEFAULT_COLOR;
+			}
           }
         }
       }
@@ -813,18 +819,18 @@ void _render(int w, int h, const Fragment *fragmentBuffer, glm::vec3 *framebuffe
   if (IDx >= w || IDy >= h) return;
   int index = getIndex(IDx, IDy, w);
   int offset;
-  range(offset, 0, samplesPerPixel) {
-    int sampleId = samplesPerPixel * index + offset;
+  range(offset, 0, SAMPLES_PER_PIXEL) {
+    int sampleId = SAMPLES_PER_PIXEL * index + offset;
     Fragment frag = fragmentBuffer[sampleId];
     glm::vec3 lightPos(0);
     glm::vec3 L = glm::normalize(glm::vec3(0, -1, -1));//lightPos - frag.viewPos);
     glm::vec3 V = glm::normalize(-frag.viewPos);
     glm::vec3 H = glm::normalize(L + V);
-    float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2) + ambientLight;
-    if (tuneShade) {
-      intensity = intensity > 0.5 ? 1 : ambientLight;
+    float intensity = saturate(glm::dot(frag.viewNorm, H) + 0.2) + AMBIENT_LIGHT;
+    if (TUNE_SHADE) {
+      intensity = intensity > 0.5 ? 1 : AMBIENT_LIGHT;
     }
-    framebuffer[index] += intensity * frag.color / (float)samplesPerPixel;
+    framebuffer[index] += intensity * frag.color / (float)SAMPLES_PER_PIXEL;
   }
 }
 
@@ -839,7 +845,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
   // Execute your rasterization pipeline here
   cudaMemset(dev_primitives, 0, width * height * sizeof(Primitive));
-  cudaMemset(dev_fragmentBuffer, 0, samplesPerPixel * width * height * sizeof(Fragment));
+  cudaMemset(dev_fragmentBuffer, 0, SAMPLES_PER_PIXEL * width * height * sizeof(Fragment));
 
   // (See README for rasterization pipeline outline.)
 
@@ -882,7 +888,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
   }
   
   //_initDepth << <blockSize, sampleBlockSize2d >> >(numSamples, dev_depth);
-  cudaMemset(dev_depth, 0xff, samplesPerPixel * width * height * sizeof(dev_depth[0]));
+  cudaMemset(dev_depth, 0xff, SAMPLES_PER_PIXEL * width * height * sizeof(dev_depth[0]));
   cudaMemset(dev_framebuffer, 0, width * height * sizeof(dev_framebuffer[0]));
   
   // TODO: rasterize
