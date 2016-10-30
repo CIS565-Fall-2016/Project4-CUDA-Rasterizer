@@ -11,6 +11,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <thrust/random.h>
+#include <thrust/remove.h>
+#include <thrust/device_ptr.h>
 #include <util/checkCUDAError.h>
 #include <util/tiny_gltf_loader.h>
 #include "rasterizeTools.h"
@@ -18,85 +20,88 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace {
+#define CULLING 1
+#define TIME 0
+#define BLOCKSIZE 256
 
-	typedef unsigned short VertexIndex;
-	typedef glm::vec3 VertexAttributePosition;
-	typedef glm::vec3 VertexAttributeNormal;
-	typedef glm::vec2 VertexAttributeTexcoord;
-	typedef unsigned char TextureData;
 
-	typedef unsigned char BufferByte;
 
-	enum PrimitiveType{
-		Point = 1,
-		Line = 2,
-		Triangle = 3
-	};
+typedef unsigned short VertexIndex;
+typedef glm::vec3 VertexAttributePosition;
+typedef glm::vec3 VertexAttributeNormal;
+typedef glm::vec2 VertexAttributeTexcoord;
+typedef unsigned char TextureData;
 
-	struct VertexOut {
-		glm::vec4 pos;
+typedef unsigned char BufferByte;
 
-		// TODO: add new attributes to your VertexOut
-		// The attributes listed below might be useful, 
-		// but always feel free to modify on your own
+enum PrimitiveType{
+	Point = 1,
+	Line = 2,
+	Triangle = 3
+};
 
-		 glm::vec3 eyePos;	// eye space position used for shading
-		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		// glm::vec3 col;
-		 glm::vec2 texcoord0;
-		 TextureData* dev_diffuseTex = NULL;
-		// int texWidth, texHeight;
-		// ...
-	};
+struct VertexOut {
+	glm::vec4 pos;
 
-	struct Primitive {
-		PrimitiveType primitiveType = Triangle;	// C++ 11 init
-		VertexOut v[3];
-	};
+	// TODO: add new attributes to your VertexOut
+	// The attributes listed below might be useful, 
+	// but always feel free to modify on your own
 
-	struct Fragment {
-		glm::vec3 color;
+	glm::vec3 eyePos;	// eye space position used for shading
+	glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
+	// glm::vec3 col;
+	glm::vec2 texcoord0;
+	TextureData* dev_diffuseTex = NULL;
+	// int texWidth, texHeight;
+	// ...
+};
 
-		// TODO: add new attributes to your Fragment
-		// The attributes listed below might be useful, 
-		// but always feel free to modify on your own
+struct Primitive {
+	PrimitiveType primitiveType = Triangle;	// C++ 11 init
+	VertexOut v[3];
+};
 
-		// glm::vec3 eyePos;	// eye space position used for shading
-		// glm::vec3 eyeNor;
-		// VertexAttributeTexcoord texcoord0;
-		// TextureData* dev_diffuseTex;
-		// ...
-	};
+struct Fragment {
+	glm::vec3 color;
 
-	struct PrimitiveDevBufPointers {
-		int primitiveMode;	//from tinygltfloader macro
-		PrimitiveType primitiveType;
-		int numPrimitives;
-		int numIndices;
-		int numVertices;
+	// TODO: add new attributes to your Fragment
+	// The attributes listed below might be useful, 
+	// but always feel free to modify on your own
 
-		// Vertex In, const after loaded
-		VertexIndex* dev_indices;
-		VertexAttributePosition* dev_position;
-		VertexAttributeNormal* dev_normal;
-		VertexAttributeTexcoord* dev_texcoord0;
+	glm::vec3 eyePos;	// eye space position used for shading
+	glm::vec3 eyeNor;
+	// VertexAttributeTexcoord texcoord0;
+	// TextureData* dev_diffuseTex;
+	// ...
+};
 
-		// Materials, add more attributes when needed
-		TextureData* dev_diffuseTex;
-		int diffuseTexWidth;
-		int diffuseTexHeight;
-		// TextureData* dev_specularTex;
-		// TextureData* dev_normalTex;
-		// ...
+struct PrimitiveDevBufPointers {
+	int primitiveMode;	//from tinygltfloader macro
+	PrimitiveType primitiveType;
+	int numPrimitives;
+	int numIndices;
+	int numVertices;
 
-		// Vertex Out, vertex used for rasterization, this is changing every frame
-		VertexOut* dev_verticesOut;
+	// Vertex In, const after loaded
+	VertexIndex* dev_indices;
+	VertexAttributePosition* dev_position;
+	VertexAttributeNormal* dev_normal;
+	VertexAttributeTexcoord* dev_texcoord0;
 
-		// TODO: add more attributes when needed
-	};
+	// Materials, add more attributes when needed
+	TextureData* dev_diffuseTex;
+	int diffuseTexWidth;
+	int diffuseTexHeight;
+	// TextureData* dev_specularTex;
+	// TextureData* dev_normalTex;
+	// ...
 
-}
+	// Vertex Out, vertex used for rasterization, this is changing every frame
+	VertexOut* dev_verticesOut;
+
+	// TODO: add more attributes when needed
+};
+
 
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
@@ -114,55 +119,57 @@ static int * dev_depth = NULL;	// you might need this buffer when doing depth te
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
  */
-__global__ 
+__global__
 void sendImageToPBO(uchar4 *pbo, int w, int h, glm::vec3 *image) {
-    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-    int index = x + (y * w);
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int index = x + (y * w);
 
-    if (x < w && y < h) {
-        glm::vec3 color;
-        color.x = glm::clamp(image[index].x, 0.0f, 1.0f) * 255.0;
-        color.y = glm::clamp(image[index].y, 0.0f, 1.0f) * 255.0;
-        color.z = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
-        // Each thread writes one pixel location in the texture (textel)
-        pbo[index].w = 0;
-        pbo[index].x = color.x;
-        pbo[index].y = color.y;
-        pbo[index].z = color.z;
-    }
+	if (x < w && y < h) {
+		glm::vec3 color;
+		color.x = glm::clamp(image[index].x, 0.0f, 1.0f) * 255.0;
+		color.y = glm::clamp(image[index].y, 0.0f, 1.0f) * 255.0;
+		color.z = glm::clamp(image[index].z, 0.0f, 1.0f) * 255.0;
+		// Each thread writes one pixel location in the texture (textel)
+		pbo[index].w = 0;
+		pbo[index].x = color.x;
+		pbo[index].y = color.y;
+		pbo[index].z = color.z;
+	}
 }
 
-/** 
+/**
 * Writes fragment colors to the framebuffer
 */
 __global__
 void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
-    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-    int index = x + (y * w);
+	int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+	int index = x + (y * w);
 
-    if (x < w && y < h) {
-        framebuffer[index] = fragmentBuffer[index].color;
+	if (x < w && y < h) {
+		//framebuffer[index] = fragmentBuffer[index].color;
 
 		// TODO: add your fragment shader code here
-
-    }
+		Fragment & f = fragmentBuffer[index];
+		float diffuse = glm::clamp(glm::dot(f.eyeNor, glm::normalize(glm::vec3(0.5f, -0.5f, 1.f))), 0.f, 1.f);
+		framebuffer[index] = (diffuse + 0.1f) * f.color;
+	}
 }
 
 /**
  * Called once at the beginning of the program to allocate memory.
  */
 void rasterizeInit(int w, int h) {
-    width = w;
-    height = h;
+	width = w;
+	height = h;
 	cudaFree(dev_fragmentBuffer);
 	cudaMalloc(&dev_fragmentBuffer, width * height * sizeof(Fragment));
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
-    cudaFree(dev_framebuffer);
-    cudaMalloc(&dev_framebuffer,   width * height * sizeof(glm::vec3));
-    cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
-    
+	cudaFree(dev_framebuffer);
+	cudaMalloc(&dev_framebuffer, width * height * sizeof(glm::vec3));
+	cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
+
 	cudaFree(dev_depth);
 	cudaMalloc(&dev_depth, width * height * sizeof(int));
 
@@ -187,9 +194,9 @@ void initDepth(int w, int h, int * depth)
 * kern function with support for stride to sometimes replace cudaMemcpy
 * One thread is responsible for copying one component
 */
-__global__ 
+__global__
 void _deviceBufferCopy(int N, BufferByte* dev_dst, const BufferByte* dev_src, int n, int byteStride, int byteOffset, int componentTypeByteSize) {
-	
+
 	// Attribute (vec3 position)
 	// component (3 * float)
 	// byte (4 * byte)
@@ -202,29 +209,29 @@ void _deviceBufferCopy(int N, BufferByte* dev_dst, const BufferByte* dev_src, in
 		int offset = i - count * n;	// which component of the attribute
 
 		for (int j = 0; j < componentTypeByteSize; j++) {
-			
-			dev_dst[count * componentTypeByteSize * n 
-				+ offset * componentTypeByteSize 
+
+			dev_dst[count * componentTypeByteSize * n
+				+ offset * componentTypeByteSize
 				+ j]
 
-				= 
+				=
 
-			dev_src[byteOffset 
-				+ count * (byteStride == 0 ? componentTypeByteSize * n : byteStride) 
-				+ offset * componentTypeByteSize 
+				dev_src[byteOffset
+				+ count * (byteStride == 0 ? componentTypeByteSize * n : byteStride)
+				+ offset * componentTypeByteSize
 				+ j];
 		}
 	}
-	
+
 
 }
 
 __global__
 void _nodeMatrixTransform(
-	int numVertices,
-	VertexAttributePosition* position,
-	VertexAttributeNormal* normal,
-	glm::mat4 MV, glm::mat3 MV_normal) {
+int numVertices,
+VertexAttributePosition* position,
+VertexAttributeNormal* normal,
+glm::mat4 MV, glm::mat3 MV_normal) {
 
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -235,7 +242,7 @@ void _nodeMatrixTransform(
 }
 
 glm::mat4 getMatrixFromNodeMatrixVector(const tinygltf::Node & n) {
-	
+
 	glm::mat4 curMatrix(1.0);
 
 	const std::vector<double> &m = n.matrix;
@@ -247,7 +254,8 @@ glm::mat4 getMatrixFromNodeMatrixVector(const tinygltf::Node & n) {
 				curMatrix[i][j] = (float)m.at(4 * i + j);
 			}
 		}
-	} else {
+	}
+	else {
 		// no matrix, use rotation, scale, translation
 
 		if (n.translation.size() > 0) {
@@ -275,12 +283,12 @@ glm::mat4 getMatrixFromNodeMatrixVector(const tinygltf::Node & n) {
 	return curMatrix;
 }
 
-void traverseNode (
+void traverseNode(
 	std::map<std::string, glm::mat4> & n2m,
 	const tinygltf::Scene & scene,
 	const std::string & nodeString,
 	const glm::mat4 & parentMatrix
-	) 
+	)
 {
 	const tinygltf::Node & n = scene.nodes.at(nodeString);
 	glm::mat4 M = parentMatrix * getMatrixFromNodeMatrixVector(n);
@@ -537,7 +545,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 									size_t s = image.image.size() * sizeof(TextureData);
 									cudaMalloc(&dev_diffuseTex, s);
 									cudaMemcpy(dev_diffuseTex, &image.image.at(0), s, cudaMemcpyHostToDevice);
-									
+
 									diffuseTexWidth = image.width;
 									diffuseTexHeight = image.height;
 
@@ -554,7 +562,7 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 					// ---------Node hierarchy transform--------
 					cudaDeviceSynchronize();
-					
+
 					dim3 numBlocksNodeTransform((numVertices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 					_nodeMatrixTransform << <numBlocksNodeTransform, numThreadsPerBlock >> > (
 						numVertices,
@@ -595,21 +603,21 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 		} // for each node
 
 	}
-	
+
 
 	// 3. Malloc for dev_primitives
 	{
 		cudaMalloc(&dev_primitives, totalNumPrimitives * sizeof(Primitive));
 	}
-	
+
 
 	// Finally, cudaFree raw dev_bufferViews
 	{
 
 		std::map<std::string, BufferByte*>::const_iterator it(bufferViewDevPointers.begin());
 		std::map<std::string, BufferByte*>::const_iterator itEnd(bufferViewDevPointers.end());
-			
-			//bufferViewDevPointers
+
+		//bufferViewDevPointers
 
 		for (; it != itEnd; it++) {
 			cudaFree(it->second);
@@ -623,12 +631,12 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 
 
-__global__ 
+__global__
 void _vertexTransformAndAssembly(
-	int numVertices, 
-	PrimitiveDevBufPointers primitive, 
-	glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal, 
-	int width, int height) {
+int numVertices,
+PrimitiveDevBufPointers primitive,
+glm::mat4 MVP, glm::mat4 MV, glm::mat3 MV_normal,
+int width, int height) {
 
 	// vertex id
 	int vid = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -638,18 +646,29 @@ void _vertexTransformAndAssembly(
 		// Multiply the MVP matrix for each vertex position, this will transform everything into clipping space
 		// Then divide the pos by its w element to transform into NDC space
 		// Finally transform x and y to viewport space
+		glm::vec4 pos = MVP * glm::vec4(primitive.dev_position[vid], 1.f);
+
+		if (fabs(pos.w) > 0.001f) {
+			pos /= pos.w;
+		}
+
+		pos.x = 0.5f * (float)width * (pos.x + 1.f);
+		pos.y = 0.5f * (float)height * (pos.y + 1.f);
+
+		primitive.dev_verticesOut[vid].pos = pos;
+		primitive.dev_verticesOut[vid].eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1.0f));
+		primitive.dev_verticesOut[vid].eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 
 		// TODO: Apply vertex assembly here
 		// Assemble all attribute arraies into the primitive array
-		
+
 	}
 }
 
 
-
 static int curPrimitiveBeginId = 0;
 
-__global__ 
+__global__
 void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, PrimitiveDevBufPointers primitive) {
 
 	// index id
@@ -660,29 +679,85 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 
-		//int pid;	// id for cur primitives vector
-		//if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
-		//	pid = iid / (int)primitive.primitiveType;
-		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
-		//		= primitive.dev_verticesOut[primitive.dev_indices[iid]];
-		//}
+		int pid;	// id for cur primitives vector
+		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
+			pid = iid / (int)primitive.primitiveType;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
+				= primitive.dev_verticesOut[primitive.dev_indices[iid]];
+		}
 
 
 		// TODO: other primitive types (point, line)
 	}
-	
+
 }
 
+__global__
+void _rasterize(
+int totalNumPrimitives,
+int width,
+int height,
+Primitive* dev_primitives,
+Fragment* dev_fragmentBuffer,
+int* dev_depth
+){
+	int pid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if (pid < totalNumPrimitives) {
 
+		Primitive & prim = dev_primitives[pid];
+		glm::vec3 tri[3] =
+		{
+			glm::vec3(prim.v[0].pos),
+			glm::vec3(prim.v[1].pos),
+			glm::vec3(prim.v[2].pos)
+		};
+		AABB bbox = getAABBForTriangle(tri);
+
+		int maxX = glm::clamp(((int)bbox.max.x) + 1, 0, width),
+			maxY = glm::clamp(((int)bbox.max.y) + 1, 0, height),
+			minX = glm::clamp((int)bbox.min.x, 0, width),
+			minY = glm::clamp((int)bbox.min.y, 0, height);
+
+		for (int i = minX; i < maxX; i++) {
+			for (int j = minY; j < maxY; j++) {
+				glm::vec3 barycentricCoord = calculateBarycentricCoordinate(tri, glm::vec2(i, j));
+				if (isBarycentricCoordInBounds(barycentricCoord)) {
+					pid = (width - i - 1) + (height - j - 1) * width;
+					int depth = (int)(getZAtCoordinate(barycentricCoord, tri) * INT_MAX);
+					atomicMin(&dev_depth[pid], depth);
+					if (depth <= dev_depth[pid]) {
+						dev_fragmentBuffer[pid].color = glm::vec3(1.f, 0.f, 0.f);
+						dev_fragmentBuffer[pid].eyePos = glm::mat3(prim.v[0].eyePos, prim.v[1].eyePos, prim.v[2].eyePos) * barycentricCoord;
+						dev_fragmentBuffer[pid].eyeNor = glm::mat3(prim.v[0].eyeNor, prim.v[1].eyeNor, prim.v[2].eyeNor) * barycentricCoord;
+
+					}
+				}
+			}
+		}
+	}
+}
+
+struct backface {
+	__host__ __device__ bool operator()(const Primitive & primitive) {
+		return glm::dot(primitive.v[0].eyeNor, -primitive.v[0].eyePos) < 0.0f;
+	}
+};
 
 /**
  * Perform rasterization.
  */
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
-    int sideLength2d = 8;
-    dim3 blockSize2d(sideLength2d, sideLength2d);
-    dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
+	int sideLength2d = 8;
+	dim3 blockSize2d(sideLength2d, sideLength2d);
+	dim3 blockCount2d((width - 1) / blockSize2d.x + 1,
 		(height - 1) / blockSize2d.y + 1);
+
+
+#if TIME
+	float total = 0.f;
+	float milliseconds = 0.f;
+	cudaEvent_t start, end;
+#endif
 
 	// Execute your rasterization pipeline here
 	// (See README for rasterization pipeline outline.)
@@ -702,36 +777,130 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 				dim3 numBlocksForVertices((p->numVertices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 				dim3 numBlocksForIndices((p->numIndices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 
+
+#if TIME
+				cudaEventCreate(&start);
+				cudaEventCreate(&end);
+				cudaEventRecord(start);
+#endif
+
 				_vertexTransformAndAssembly << < numBlocksForVertices, numThreadsPerBlock >> >(p->numVertices, *p, MVP, MV, MV_normal, width, height);
 				checkCUDAError("Vertex Processing");
 				cudaDeviceSynchronize();
+#if TIME
+				cudaEventRecord(end);
+				cudaEventSynchronize(end);
+				cudaEventElapsedTime(&milliseconds, start, end);
+				total += milliseconds;
+				printf("Vertex: %4.4f \n", milliseconds);
+#endif
+
+#if TIME
+				cudaEventCreate(&start);
+				cudaEventCreate(&end);
+				cudaEventRecord(start);
+#endif
 				_primitiveAssembly << < numBlocksForIndices, numThreadsPerBlock >> >
-					(p->numIndices, 
-					curPrimitiveBeginId, 
-					dev_primitives, 
+					(p->numIndices,
+					curPrimitiveBeginId,
+					dev_primitives,
 					*p);
 				checkCUDAError("Primitive Assembly");
-
+#if TIME
+				cudaEventRecord(end);
+				cudaEventSynchronize(end);
+				cudaEventElapsedTime(&milliseconds, start, end);
+				total += milliseconds;
+				printf("Primitive: %4.4f \n", milliseconds);
+#endif
 				curPrimitiveBeginId += p->numPrimitives;
 			}
 		}
 
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
-	
+
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
-	
+
 	// TODO: rasterize
+	int numRemainingPrimitives = totalNumPrimitives;
 
 
 
-    // Copy depthbuffer colors into framebuffer
+
+
+#if CULLING
+
+#if TIME
+	cudaEventCreate(&start);
+	cudaEventCreate(&end);
+	cudaEventRecord(start);
+#endif
+	thrust::device_ptr<Primitive> dev_thrust_primitives = thrust::device_pointer_cast(dev_primitives);
+	numRemainingPrimitives = thrust::remove_if(dev_thrust_primitives, dev_thrust_primitives + numRemainingPrimitives, backface()) - dev_thrust_primitives;
+
+#if TIME
+	cudaEventRecord(end);
+	cudaEventSynchronize(end);
+	cudaEventElapsedTime(&milliseconds, start, end);
+	total += milliseconds;
+	printf("Culling: %4.4f \n", milliseconds);
+#endif
+
+#endif
+
+
+
+	//printf("%d\n", totalNumPrimitives);
+
+	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
+	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth);
+	checkCUDAError("init depth");
+
+	dim3 numThreadsPerBlock(BLOCKSIZE);
+	dim3 numBlocksForPrimitives((numRemainingPrimitives + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
+
+#if TIME
+	cudaEventCreate(&start);
+	cudaEventCreate(&end);
+	cudaEventRecord(start);
+#endif
+	_rasterize << <numRemainingPrimitives, numThreadsPerBlock >> >
+		(numRemainingPrimitives,
+		width,
+		height,
+		dev_primitives,
+		dev_fragmentBuffer,
+		dev_depth);
+	checkCUDAError("rasterize primitives");
+#if TIME
+	cudaEventRecord(end);
+	cudaEventSynchronize(end);
+	cudaEventElapsedTime(&milliseconds, start, end);
+	total += milliseconds;
+	printf("Rasterize: %4.4f \n", milliseconds);
+#endif
+
+#if TIME
+	cudaEventCreate(&start);
+	cudaEventCreate(&end);
+	cudaEventRecord(start);
+#endif
+	// Copy depthbuffer colors into framebuffer
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
 	checkCUDAError("fragment shader");
-    // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
-    checkCUDAError("copy render result to pbo");
+#if TIME
+	cudaEventRecord(end);
+	cudaEventSynchronize(end);
+	cudaEventElapsedTime(&milliseconds, start, end);
+	total += milliseconds;
+	printf("Fragment: %4.4f \n", milliseconds);
+#endif
+
+	// Copy framebuffer into OpenGL buffer for OpenGL previewing
+	sendImageToPBO << <blockCount2d, blockSize2d >> >(pbo, width, height, dev_framebuffer);
+	checkCUDAError("copy render result to pbo");
 }
 
 /**
@@ -739,7 +908,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
  */
 void rasterizeFree() {
 
-    // deconstruct primitives attribute/indices device buffer
+	// deconstruct primitives attribute/indices device buffer
 
 	auto it(mesh2PrimitivesMap.begin());
 	auto itEnd(mesh2PrimitivesMap.end());
@@ -753,24 +922,24 @@ void rasterizeFree() {
 
 			cudaFree(p->dev_verticesOut);
 
-			
+
 			//TODO: release other attributes and materials
 		}
 	}
 
 	////////////
 
-    cudaFree(dev_primitives);
-    dev_primitives = NULL;
+	cudaFree(dev_primitives);
+	dev_primitives = NULL;
 
 	cudaFree(dev_fragmentBuffer);
 	dev_fragmentBuffer = NULL;
 
-    cudaFree(dev_framebuffer);
-    dev_framebuffer = NULL;
+	cudaFree(dev_framebuffer);
+	dev_framebuffer = NULL;
 
 	cudaFree(dev_depth);
 	dev_depth = NULL;
 
-    checkCUDAError("rasterize Free");
+	checkCUDAError("rasterize Free");
 }
