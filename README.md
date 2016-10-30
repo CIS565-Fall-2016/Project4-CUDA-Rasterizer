@@ -82,7 +82,7 @@ The kernel time of different stages of different .gltf files is shown as below. 
 
 Instead of comparing different objects, different distance from the object `duck.gltf` to the opsition of the camera is applied.
 
-![](./img/duck.jpg)
+![](./img/Duck.jpg)
 
 As the camera getting closer and closer, the rasterizer stage takes up more time. It illustrates that as the object taking up more and more area of the screen, the workload of the rasterizer becomes heavier because of the large area of primitives and more pixels needed to be filled by scanline.
 
@@ -96,7 +96,7 @@ Backface Culling reduce lots of execution time of both fragment shader and the r
 
 ![](./img/backface.jpg)
 
-With no backface culling, the stacked chart appears different from the one shown at the beginning. The rasterizer stage takes up most duration because the rasterizer is shading numerous redundant primitives.
+With no backface culling, the stacked chart appears different from the one shown at the beginning. The rasterizer stage takes up most duration because the rasterizer is shading is appliednumerous redundant primitives.
 
 ![](./img/nobackface.jpg)
 
