@@ -9,6 +9,7 @@
 
 
 #include "main.hpp"
+#include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_LOADER_IMPLEMENTATION
@@ -65,8 +66,11 @@ int main(int argc, char **argv) {
 void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+		auto startTime = std::chrono::high_resolution_clock::now();
         runCuda();
 
+		cudaDeviceSynchronize(); //CUDA kernel launches are asynchronous, all GPU-related tasks placed in one stream are executed sequentially.
+		auto endTime = std::chrono::high_resolution_clock::now();
         time_t seconds2 = time (NULL);
 
         if (seconds2 - seconds >= 1) {
@@ -75,10 +79,11 @@ void mainLoop() {
             fpstracker = 0;
             seconds = seconds2;
         }
-
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
+		std::chrono::duration<double, std::milli> eclipsed = endTime - startTime;
+		double delta = eclipsed.count();
+		//printf("Delata time is", delta);
+		string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + "FPS  |  " + utilityCore::convertIntToString((int)delta) + "ms";
         glfwSetWindowTitle(window, title.c_str());
-
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
         glBindTexture(GL_TEXTURE_2D, displayImage);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -97,6 +102,7 @@ void mainLoop() {
 //-------------------------------
 float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
+//we could change our angle here
 float x_angle = 0.0f, y_angle = 0.0f;
 void runCuda() {
     // Map OpenGL buffer object for writing from CUDA on a single GPU

@@ -180,7 +180,7 @@ typedef struct {
   std::string name;
   int width;
   int height;
-  int component;
+  int component;  
   int pad0;
   std::vector<unsigned char> image;
 
