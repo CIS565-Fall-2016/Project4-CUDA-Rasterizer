@@ -1,17 +1,19 @@
 CUDA Rasterizer
 ===============
 
-[CLICK ME FOR INSTRUCTION OF THIS PROJECT](./INSTRUCTION.md)
-
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Kaixiang Miao
+* Tested on: Windows 7, i7-3630QM @ 2.40GHz 8GB, GTX 660M 2GB (Lenovo Y580 laptop, personal computer)
 
-### (TODO: Your README)
+### Screenshot
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
+<table class="image">
+<tr>
+	<td><img src="img/20.gif"/></td>
+	<td><img src="img/10.gif"/></td>
+</tr>
+</table>
 
 
 ### Credits
