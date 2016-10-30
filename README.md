@@ -92,6 +92,36 @@ We figure out the texture coordinates in a more sophisticated way. We interpolat
 |------|------|
 |![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/WithoutPerspectiveCorrectnessCheckerBoard.PNG "WithoutPerspective") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/PerspectiveCorrectnessCheckerBoard.PNG "WithPerspective") |
 
+###Point Representation & Line Representation
+
+|  Point Representation | Line Representation |
+|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/truckpoint.gif "Truck Point") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/LineRepresentation.PNG "Truck Line") |
+
+|  Point Representation | Line Representation |
+|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/cowpoint.gif "Cow Point") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/cowcowcow.gif "Cow Line") |
+
+###Super Sampling Anti-Aliasing (SSAA)
+Divide one pixel into small pixels, then average to get the final color, put it into framebuffer
+
+|  No SSAA | SSAA = 2 | SSAA = 4 |
+|------|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAAnoSHOW.PNG "No SSAA") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAA2SHOW.PNG "SSAA 2 * 2") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAA4SHOW.PNG "SSAA 4 * 4") |
+
+###Correct color interpolation between points on a primitive
+
+I use barycentric calculation of each triangle's vertex coordinate v[0], v[1] & v[2]'s color to fill each fragment color.
+
+I use each vertex's normal in view(eye) coordinate system to represent its color in order to visualize.
+
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/normalInterpolate1.gif "Normal Interpolation") 
+
+The two below are I accidently use the first triangle's vertex normal and create an interesting result. Also put here for fun.
+
+| First Triangle Normal Interpolation | First Triangle Normal Interpolation | 
+|------|------|
+| ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/normalinterpolation.gif "First Triangle Normal Interpolation") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/cownormalinterpolation.gif "First Triangle Normal Interpolation") |
 
 
 ## Performance Analysis
