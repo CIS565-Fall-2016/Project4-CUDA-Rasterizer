@@ -32,41 +32,42 @@ Different from ray tracing technique (as my last project shows), there's no conc
 The whole graphics pipeline is like this:
 
 
-* 1. Vertex Assembly
+#### 1. Vertex Assembly
 
 Pull together a vertex from one or more buffers
 
 
-* 2. Vertex Shader
+#### 2. Vertex Shader
 
 Transform incoming vertex position from model to clip coordinates
 
 `World Space ->  View Space -> Clipping Space -> Normalized Device Coordinates (NDC) Space -> Viewport (Screen/Window) Space`
 
-* 3. Primitive Assembly
+#### 3. Primitive Assembly
 
 A vertex shader processes one vertex.  Primitive asstriangleembly groups vertices forming one primitive, e.g., a, line, etc.
 
-* 4. Rasterization
+#### 4. Rasterization
 
 Determine what pixels a primitive overlaps
 
-* 5. Fragment Shader
+#### 5. Fragment Shader
 
 Shades the fragment by simulating the interaction of light and material.
 Different rendering scheme could be applied here: Blinn-Phong, Lambert, Non-Photorealistic Rendering (NPR), etc.
 
-* 6. Per-Fragment Tests
+#### 6. Per-Fragment Tests
 
 Choose one candidate to fill framebuffer!
 Common techniques : Depth test, Scissor test, etc.
 
-* 7. Blending
+#### 7. Blending
 
 Combine fragment color with framebuffer color
 
-* 8. Framebuffer
-Write color to our framebuffer, a.k.a tell each pixel its color :)
+#### 8. Framebuffer
+
+Write color to framebuffer, a.k.a tell each pixel its color :)
 
 
 ### Credits
