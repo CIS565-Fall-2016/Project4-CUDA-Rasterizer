@@ -24,13 +24,13 @@
 #define POINT 0
 #define LINE 0
 
-#define BILINEAR 1
-#define PERSPECTIVE 1
+#define BILINEAR 0
+#define PERSPECTIVE 0
 
 #define BLINNPHONG 0
-#define LAMBERT 1
+#define LAMBERT 0
 
-#define SSAA 4
+#define SSAA 1
 
 namespace {
 
