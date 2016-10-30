@@ -262,6 +262,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			diffuseColor = curFrag.color;
 			//framebuffer[index] = curFrag.color;
 		}
+	//	diffuseColor = curFrag.color;
 #else
 		
 	//	diffuseColor = curFrag.color;
@@ -844,7 +845,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].diffuseTexWidth = primitive.diffuseTexWidth;
 			dev_primitives[pid + curPrimitiveBeginId].diffuseTexHeight = primitive.diffuseTexHeight;
-			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = primitive.dev_verticesOut[primitive.dev_indices[iid % (int)primitive.primitiveType]].col;//rgb[iid % 3];
+		//	dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = primitive.dev_indices[iid % (int)primitive.primitiveType]].col;//primitive.dev_verticesOut[primitive.dev_indices[iid]].col;// primitive.dev_indices[iid % (int)primitive.primitiveType]].col;//rgb[iid % 3];
 		} else if (primitive.primitiveMode == TINYGLTF_MODE_LINE) {
 
 		} else if (primitive.primitiveMode == TINYGLTF_MODE_POINTS) {
@@ -957,6 +958,7 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 								dev_fragmentBuffer[pixelIndex].diffuseTexWidth = dev_primitives[idx].diffuseTexWidth;
 								dev_fragmentBuffer[pixelIndex].diffuseTexHeight = dev_primitives[idx].diffuseTexHeight;
 								//color interpolation
+							//	dev_fragmentBuffer[pixelIndex].color = curPixelBaryCoord.x * dev_primitives[idx].v[0].col + curPixelBaryCoord.y * dev_primitives[idx].v[1].col + curPixelBaryCoord.z * dev_primitives[idx].v[2].col;// test
 								dev_fragmentBuffer[pixelIndex].color = curPixelBaryCoord.x * dev_primitives[idx].v[0].col + curPixelBaryCoord.y * dev_primitives[idx].v[1].col + curPixelBaryCoord.z * dev_primitives[idx].v[2].col;// test
 
 								//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
