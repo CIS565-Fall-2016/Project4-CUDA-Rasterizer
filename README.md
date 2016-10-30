@@ -27,7 +27,7 @@ CUDA Rasterizer
 #### Bilinear Texture Mapping
 <table class="image">
 <tr>
-	<td>cow.gltf</td>
+	<td>duck.gltf</td>
 	<td>CesiumMilkTruck.gltf</td>
 </tr>
 <tr>
@@ -96,7 +96,7 @@ Backface Culling reduce lots of execution time of both fragment shader and the r
 
 ![](./img/backface.jpg)
 
-With no backface culling, the stacked chart appears different from the one shown at the beginning. The rasterizer stage takes up most duration because the rasterizer is shading is appliednumerous redundant primitives.
+With no backface culling, the stacked chart appears different from the one shown at the beginning. The rasterizer stage takes up most duration because the rasterizer is shading numerous redundant primitives.
 
 ![](./img/nobackface.jpg)
 
