@@ -25,7 +25,25 @@ Use CUDA to implement a simplified rasterized graphics pipeline, similar to the 
 * Support rasterizing Triangles, Lines, Points
 * Super Sampling Anti-Aliasing (SSAA)
 
-## Project Summary
+## Project Introduction
+As we all know, rasterizeration converts vector graphics into dot matrix graphics. It is quite popular and important in real-time rendering area. Modern 3D rendering APIs like OpenGL, DirectX (Microsoft), Vulkan (Khronos, quite new area) are all implemented related to rasterize techniques. 
+
+Different from ray tracing technique (as my last project shows), there's no concept of shooting rays during the whole procedure.
+The whole graphics pipeline is like this:
+
+* 1. Vertex Assembly
+
+Pull together a vertex from one or more buffers
+
+* 2. Vertex Shader
+Transform incoming vertex position from model to clip coordinates
+
+`World Space ->  View Space -> Clipping Space -> Normalized Device Coordinates (NDC) Space -> Viewport (Screen/Window) Space`
+
+
+
+
+
 
 
 ### Credits
