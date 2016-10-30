@@ -32,11 +32,11 @@ As we all know, rasterizeration converts vector graphics into dot matrix graphic
 Different from ray tracing technique (as my last project shows), there's no concept of shooting rays during the whole procedure.
 The whole graphics pipeline is like this:
 
+![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/readmepipeline.jpg "Graphics Pipeline") 
 
 #### 1. Vertex Assembly
 
 Pull together a vertex from one or more buffers
-
 
 #### 2. Vertex Shader
 
@@ -69,6 +69,10 @@ Combine fragment color with framebuffer color
 #### 8. Framebuffer
 
 Write color to framebuffer, a.k.a tell each pixel its color :)
+
+
+
+
 
 
 ### Credits
