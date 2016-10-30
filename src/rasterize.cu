@@ -20,11 +20,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define CULLING 1
+#define CULLING 0
 #define TIME 0
 #define BLOCKSIZE 256
-
-
 
 typedef unsigned short VertexIndex;
 typedef glm::vec3 VertexAttributePosition;
