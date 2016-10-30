@@ -82,11 +82,11 @@ We could see the apparant better result of Bilinear Texture Filtering since we t
 
 |  Without Bilinear Texture Filtering  | With Bilinear Texture Filtering |
 |------|------|
-|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/BilinearEnlarged.png "WithBininear") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/NoBilinearEnlarged.png "NoBininear") |
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/NoBilinearEnlarged.png "NoBininear") |![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/BilinearEnlarged.png "WithBininear")|
 
 ###UV texture mapping with perspective correct texture coordinates
 
-We figure out the texture coordinates in a more sophisticated way. We interpolate texture coordinates, and then do the perspective divide.
+With Perspective Correctness, we figure out the texture coordinates in a more sophisticated way. We interpolate texture coordinates, and then do the perspective divide.
 
 |  Without Perspective Correctness | With Perspective Correctness |
 |------|------|
@@ -128,13 +128,13 @@ The two below are I accidently use the first triangle's vertex normal and create
 
 ###Different Stages of rasterizer time arrangement percentage(Compare between Lines, Points and Triangles)
 
-From the picture below, we can see that when we choose triangle as our primitive, the rasterization stage occupies most of time since we do all the fragmentbuffer calculations & filling there, easpecially for the Axis-Aligned Bounding Box(AABB) calculation. In line & point cases, we need to do much less calculations w.s.t fragmentbuffer in rasterization stage, render case as a result plays a larger role to fill the framebuffer. 
+From the picture below, we can see that when we choose triangle as our primitive, the rasterization stage occupies most of time since we do all the fragmentbuffer calculations & filling there, easpecially for the Axis-Aligned Bounding Box(AABB) calculation. In line & point cases, we need to do much less calculations about fragmentbuffer in rasterization stage, render case as a result plays a larger role to fill the framebuffer. 
 ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/StagePerformance.PNG "Stage Perfomance")
 
 
 ###Compare between Super-Sampling Anti-Aliasing(SSAA) and No SSAA
 
-Based on CG knowledge, we all know that SSAA is a time-consuming stage. Since we need to open a larger fragment buffer, frame buffer and depth buffer,  so the calculations maybe mutiple in order to get an average value then send it to PBO.
+Based on CG knowledge, we all know that SSAA is a time-consuming stage. Since we need to open a larger fragment buffer, frame buffer and depth buffer, so the calculations maybe mutiple in order to get an average value then send it to PBO.
 Here the result is based on CesiumMilkTruck.gltf, and my table is based on the time/fps.
 
 ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAAPerformance.PNG "SSAA Comparasion")
