@@ -222,8 +222,8 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			//if (!(cacheFragment.diffuseTexWidth>0 && cacheFragment.diffuseTexHeight>0 & cacheFragment.diffuseTexComponent>0))
 			//	printf("com:%d %d %d\n", cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
 			//textureColor = cacheFragment.color * (diffuseTerm + ambientTerm);//
-			//textureColor = getTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
-			textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
+			textureColor = getTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
+			//textureColor = getBilinearTextureColor(cacheFragment.dev_diffuseTex, cacheFragment.texcoord0, cacheFragment.diffuseTexWidth, cacheFragment.diffuseTexHeight, cacheFragment.diffuseTexComponent);
 			//textureColor = glm::vec3(cacheFragment.texcoord0, 0.0f);
 			//printf("coord:%f %f\ncolor:%f %f %f\n\n", cacheFragment.texcoord0[0], cacheFragment.texcoord0[1], textureColor[0], textureColor[1], textureColor[2]);
 			
@@ -1118,13 +1118,25 @@ __global__ void rasterizer(Fragment *fragment, int *depth, Primitive *primitive,
 	}
 
 }
-
+//float time_elapsed = 0.0f;
+//cudaEvent_t start,stop;
+//cudaEventCreate(&start);
+//cudaEventCreate(&stop);
+//cudaEventRecord( start,0);
+//
+//cudaEventRecord( stop,0);
+//cudaEventSynchronize(start);
+//cudaEventSynchronize(stop);
+//cudaEventElapsedTime(&time_elapsed,start,stop);
 /**
  * Perform rasterization.
  */
+float stime[100];
+cudaEvent_t start,stop;
+float time_elapsed;
 void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal, int counter) {
 	//counter++;
-	
+	FILE *fp = fopen("time.txt", "a+");
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
@@ -1151,16 +1163,35 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 				dim3 numBlocksForIndices((p->numIndices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 				//printf("stop1\n");
 				//cudaDeviceSynchronize();
+time_elapsed = 0.0f;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start,0);
 				_vertexTransformAndAssembly << < numBlocksForVertices, numThreadsPerBlock >> >(p->numVertices, *p, MVP, MV, MV_normal, width, height);
+cudaEventRecord( stop,0);
+cudaEventSynchronize(start);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&time_elapsed,start,stop);
+stime[0] += time_elapsed;
+
 				checkCUDAError("Vertex Processing");
 				//printf("stop2\n");
 				//cudaDeviceSynchronize();
 				//printf("stop3\n");
+time_elapsed = 0.0f;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start,0);
 				_primitiveAssembly << < numBlocksForIndices, numThreadsPerBlock >> >
 					(p->numIndices, 
 					curPrimitiveBeginId, 
 					dev_primitives, 
 					*p);
+cudaEventRecord(stop,0);
+cudaEventSynchronize(start);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&time_elapsed,start,stop);
+stime[1] += time_elapsed;
 				//printf("stop4\n");
 				checkCUDAError("Primitive Assembly");
 				//cudaDeviceSynchronize();
@@ -1173,9 +1204,17 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		checkCUDAError("Vertex Processing and Primitive Assembly");
 	}
 	dim3 numBlocksForPrimitives((curPrimitiveBeginId + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
-
-	_backFaceCulling<< < numBlocksForPrimitives, numThreadsPerBlock >> >(curPrimitiveBeginId, dev_primitives, dev_flag);
-	_primitivesCompress(curPrimitiveBeginId, dev_primitives, dev_flag);
+time_elapsed = 0.0f;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start,0);
+	//_backFaceCulling<< < numBlocksForPrimitives, numThreadsPerBlock >> >(curPrimitiveBeginId, dev_primitives, dev_flag);
+	//_primitivesCompress(curPrimitiveBeginId, dev_primitives, dev_flag);
+cudaEventRecord(stop,0);
+cudaEventSynchronize(start);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&time_elapsed,start,stop);
+stime[2] += time_elapsed;
 
 	cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
 	initDepth << <blockCount2d, blockSize2d >> >(width, height, dev_depth, dev_fragmentBuffer);
@@ -1185,15 +1224,43 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	//printf("%d\n", (curPrimitiveBeginId + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 
 	cudaMemset(dev_mutex, 0, width * height * sizeof(int));
+time_elapsed = 0.0f;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start,0);
 	rasterizer<<<numBlocksForPrimitives, numThreadsPerBlock>>>(dev_fragmentBuffer, dev_depth, dev_primitives, curPrimitiveBeginId, width, height, dev_mutex);
-
+cudaEventRecord(stop,0);
+cudaEventSynchronize(start);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&time_elapsed,start,stop);
+stime[3] += time_elapsed;
 	
     // Copy depthbuffer colors into framebuffer
+time_elapsed = 0.0f;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start,0);
 	render << <blockCount2d, blockSize2d >> >(width, height, dev_fragmentBuffer, dev_framebuffer);
+cudaEventRecord(stop,0);
+cudaEventSynchronize(start);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&time_elapsed,start,stop);
+stime[4] += time_elapsed;
+
 	checkCUDAError("fragment shader");
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
+
+if (counter == 59)
+{
+	for (int i = 0; i < 5; i++)
+		fprintf(fp, "%f	", stime[i]);
+	fprintf(fp, "\n");
+	fclose(fp);
+	printf("DONE\n");
+}
+
 }
 
 /**
