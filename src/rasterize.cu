@@ -19,8 +19,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 
-#define SSAA 0
-#define MSAA 1
+#define SSAA 1
+#define MSAA 0
 #define MSAA_COF 0.5f
 
 namespace {
