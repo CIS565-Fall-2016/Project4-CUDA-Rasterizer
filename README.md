@@ -136,6 +136,7 @@ From the picture below, we can see that when we choose triangle as our primitive
 
 Based on CG knowledge, we all know that SSAA is a time-consuming stage. Since we need to open a larger fragment buffer, frame buffer and depth buffer, so the calculations maybe mutiple in order to get an average value then send it to PBO.
 Here the result is based on CesiumMilkTruck.gltf, and my table is based on the time/fps.
+We could see that as SSAA level increases, we get one frame with more time!
 
 ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAAPerformance.PNG "SSAA Comparasion")
 
