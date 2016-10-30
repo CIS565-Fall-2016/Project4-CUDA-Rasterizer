@@ -10,6 +10,10 @@ CUDA Rasterizer
 
 <table class="image">
 <tr>
+	<td>duck.gltf</td>
+	<td>cow.gltf</td>
+</tr>
+<tr>
 	<td><img src="img/20.gif"/></td>
 	<td><img src="img/10.gif"/></td>
 </tr>
