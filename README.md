@@ -8,6 +8,9 @@ CUDA Rasterizer
 
 ### Screenshot
 
+----------------
+
+##### perspective-correct color interpolation
 <table class="image">
 <tr>
 	<td>duck.gltf</td>
