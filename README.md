@@ -43,7 +43,6 @@ Transform incoming vertex position from model to clip coordinates
 
 `World Space ->  View Space -> Clipping Space -> Normalized Device Coordinates (NDC) Space -> Viewport (Screen/Window) Space`
 
-
 * 3. Primitive Assembly
 
 A vertex shader processes one vertex.  Primitive asstriangleembly groups vertices forming one primitive, e.g., a, line, etc.
@@ -52,8 +51,22 @@ A vertex shader processes one vertex.  Primitive asstriangleembly groups vertice
 
 Determine what pixels a primitive overlaps
 
+* 5. Fragment Shader
 
+Shades the fragment by simulating the interaction of light and material.
+Different rendering scheme could be applied here: Blinn-Phong, Lambert, Non-Photorealistic Rendering (NPR), etc.
 
+* 6. Per-Fragment Tests
+
+Choose one candidate to fill framebuffer!
+Common techniques : Depth test, Scissor test, etc.
+
+* 7. Blending
+
+Combine fragment color with framebuffer color
+
+* 8. Framebuffer
+Write color to our framebuffer, a.k.a tell each pixel its color :)
 
 
 ### Credits
