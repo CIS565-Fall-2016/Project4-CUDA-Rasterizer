@@ -9,10 +9,16 @@
 
 
 #include "main.hpp"
-
+#include <chrono>
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_LOADER_IMPLEMENTATION
 #include <util/tiny_gltf_loader.h>
+
+//#define USE_CENTAUR_MODEL
+//#define USE_HEAD_MODEL
+//#define USE_ENGINE_MODEL
+//#define USE_TURNTABLE
+#define USE_TURNTABLE
 
 //-------------------------------
 //-------------MAIN--------------
@@ -76,7 +82,12 @@ void mainLoop() {
             seconds = seconds2;
         }
 
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
+		static auto start = std::chrono::system_clock::now();
+		auto now = std::chrono::system_clock::now();
+		float timeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+		start = now;
+
+        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS | " + utilityCore::convertIntToString((int)timeElapsed) + " ms";
         glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
@@ -99,7 +110,9 @@ float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
 float x_angle = 0.0f, y_angle = 0.0f;
 void runCuda() {
-    // Map OpenGL buffer object for writing from CUDA on a single GPU
+	static auto start = std::chrono::system_clock::now();
+
+	// Map OpenGL buffer object for writing from CUDA on a single GPU
     // No data is moved (Win & Linux). When mapped to CUDA, OpenGL should not use this buffer
     dptr = NULL;
 
@@ -107,12 +120,32 @@ void runCuda() {
 		scale * ((float)width / (float)height),
 		-scale, scale, 1.0, 1000.0);
 
+#ifdef USE_CENTAUR_MODEL
+	glm::mat4 V = glm::translate(glm::vec3(0, -15, -20));
+#elif defined(USE_ENGINE_MODEL)
+	glm::mat4 V = glm::translate(glm::vec3(0, -15, -600));
+#elif defined(USE_HEAD_MODEL)
+	glm::mat4 V = glm::translate(glm::vec3(0, 0, 0));
+#else
 	glm::mat4 V = glm::mat4(1.0f);
+#endif
 
+	auto now = std::chrono::system_clock::now();
+	float timeElapsed 
+#ifdef USE_TURNTABLE	
+	= std::chrono::duration_cast<std::chrono::milliseconds>(now - start).count();
+#else
+	= 0;
+#endif
+	// turn table
 	glm::mat4 M =
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
 		* glm::rotate(x_angle, glm::vec3(1.0f, 0.0f, 0.0f))
-		* glm::rotate(y_angle, glm::vec3(0.0f, 1.0f, 0.0f));
+		* glm::rotate(y_angle + timeElapsed / 1000.0f, glm::vec3(0.0f, 1.0f, 0.0f))
+#ifdef USE_HEAD_MODEL	
+		* glm::scale(glm::vec3(15, 15, 15))
+#endif
+		;
 
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
@@ -394,6 +427,6 @@ void mouseMotionCallback(GLFWwindow* window, double xpos, double ypos)
 
 void mouseWheelCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
-	const double s = 1.0;	// sensitivity
+	const double s = 0.1;	// sensitivity
 	z_trans += (float)(s * yoffset);
 }
