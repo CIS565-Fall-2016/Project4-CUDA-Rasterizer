@@ -21,17 +21,16 @@
 
 
 #define TRIANGLES 1
-
-#define BILINEAR 1
-#define PERSPECTIVE 1
-#define BLINNPHONG 0
-#define LAMBERT 1
-
 #define POINT 0
 #define LINE 0
 
+#define BILINEAR 0
+#define PERSPECTIVE 0
+
+#define BLINNPHONG 0
+#define LAMBERT 0
+
 #define SSAA 2
- 
 
 namespace {
 
@@ -65,7 +64,7 @@ namespace {
 
 		 glm::vec3 eyePos;	// eye space position used for shading
 		 glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-		// glm::vec3 col;
+		 glm::vec3 col;
 		 glm::vec2 texcoord0;
 		 TextureData* dev_diffuseTex = NULL;
 		 int diffuseTexWidth;
@@ -150,7 +149,7 @@ __global__
 void sendImageToPBO(uchar4 *pbo, int w, int h, int ssaa, glm::vec3 *image) {
     int x = (blockIdx.x * blockDim.x) + threadIdx.x;
     int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-    int index = x + (y * w);
+    int index = x + (y * w);  // one row per x
 //	int newx = ssaa * x;
 //	int newy = ssaa * y;
 
@@ -264,14 +263,16 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 			//framebuffer[index] = curFrag.color;
 		}
 #else
-		//For normal case
-		if (texture!= NULL) {
-			diffuseColor = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
-			//framebuffer[index] = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
-		} else {
-			diffuseColor = curFrag.color;
-			//framebuffer[index] = fragmentBuffer[index].color;
-		}
+		
+		diffuseColor = curFrag.color;
+		////For normal case
+		//if (texture!= NULL) {
+		//	diffuseColor = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
+		//	//framebuffer[index] = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
+		//} else {
+		//	diffuseColor = curFrag.color;
+		//	//framebuffer[index] = fragmentBuffer[index].color;
+		//}
 #endif
 
 		glm::vec3 returnedColor = diffuseColor;
@@ -817,6 +818,8 @@ void _vertexTransformAndAssembly(
 		if (primitive.dev_texcoord0 != NULL) {
 			primitive.dev_verticesOut[vid].texcoord0 = primitive.dev_texcoord0[vid];
 		}	
+		//try new feature
+		primitive.dev_verticesOut[vid].col = glm::normalize(MV_normal * primitive.dev_normal[vid]);
 	}
 }
 
@@ -828,13 +831,11 @@ __global__
 void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_primitives, PrimitiveDevBufPointers primitive) {
 
 	// index id
-	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;
-
+	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;	
 	if (iid < numIndices) {
-		
+		glm::vec3 rgb[3] = { glm::vec3(1.f, 1.f, 0.f), glm::vec3(0.f, 1.f, 1.f), glm::vec3(1.f, 0.f, 1.f) };
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
-
 		//Primitive assembly groups vertices forming one primitive
 		int pid;	// id for cur primitives vector
 		if (primitive.primitiveMode == TINYGLTF_MODE_TRIANGLES) {
@@ -843,6 +844,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 			dev_primitives[pid + curPrimitiveBeginId].dev_diffuseTex = primitive.dev_diffuseTex;
 			dev_primitives[pid + curPrimitiveBeginId].diffuseTexWidth = primitive.diffuseTexWidth;
 			dev_primitives[pid + curPrimitiveBeginId].diffuseTexHeight = primitive.diffuseTexHeight;
+			dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType].col = primitive.dev_verticesOut[primitive.dev_indices[iid % (int)primitive.primitiveType]].col;//rgb[iid % 3];
 		} else if (primitive.primitiveMode == TINYGLTF_MODE_LINE) {
 
 		} else if (primitive.primitiveMode == TINYGLTF_MODE_POINTS) {
@@ -883,7 +885,7 @@ glm::vec3 lineHelper(int width, int height, Fragment* fragBuffer, const glm::vec
 		int length = glm::max(deltaX, deltaY); //lets
 /*
 		/|
-	   / |    deltaY > deltaX, then we choose delta Y
+	   / |    in this example I draw, deltaY > deltaX, then we choose delta Y
 	  /__|    vectorstart = v1, i = 0;  vectorend = v2, i = 1;
 */
 /*
@@ -915,7 +917,8 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 		glm::vec2 triTexcoord0[3] = { dev_primitives[idx].v[0].texcoord0, dev_primitives[idx].v[1].texcoord0, dev_primitives[idx].v[2].texcoord0 };
 		// bounding box for a given triangle
 		// test color
-		glm::vec3 color(1.f, 0.5f, 0.5f);
+		// glm::vec3 color(1.f, 0.5f, 0.5f);
+
 		int pixelIndex;
 
 #if TRIANGLES
@@ -930,7 +933,7 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 		int depth;
 		// using Bary Coordinates to test whether inside a given triangle or not
 		glm::vec3 curPixelBaryCoord;
-		
+
 		    for (int x = Xmin; x <= Xmax; x++) {  //similar to last year cg assignment, traversal 
 		    	for (int y = Ymin; y <= Ymax; y++) {
 						glm::vec2 curPixel(x, y);
@@ -939,6 +942,7 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 							pixelIndex = x + y * width; // pixel index
 							depth = -getZAtCoordinate(curPixelBaryCoord, tri) * INT_MAX; // ok we get depth
 							atomicMin(&dev_depth[pixelIndex], depth);  // ok we got the front one
+							int curindex = pixelIndex;
 							if (dev_depth[pixelIndex] == depth) // to test if this is the right candidate
 							{
 								//interpolate any values in triangle’s vertices
@@ -952,7 +956,8 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 								dev_fragmentBuffer[pixelIndex].texcoord0 = texcoord0;
 								dev_fragmentBuffer[pixelIndex].diffuseTexWidth = dev_primitives[idx].diffuseTexWidth;
 								dev_fragmentBuffer[pixelIndex].diffuseTexHeight = dev_primitives[idx].diffuseTexHeight;
-								dev_fragmentBuffer[pixelIndex].color = color; // test
+								//color interpolation
+								dev_fragmentBuffer[pixelIndex].color = curPixelBaryCoord.x * dev_primitives[idx].v[0].col + curPixelBaryCoord.y * dev_primitives[idx].v[1].col + curPixelBaryCoord.z * dev_primitives[idx].v[2].col;// test
 
 								//good reference http://web.cs.ucdavis.edu/~amenta/s12/perspectiveCorrect.pdf
 								//https://en.wikipedia.org/wiki/Texture_mapping#Perspective_correctness
@@ -964,7 +969,6 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 								float depth = (1.0f / (uDivZ.x + uDivZ.y + uDivZ.z));
 								glm::vec2 persTexture = uDivZ.x * triTexcoord0[0] + uDivZ.y * triTexcoord0[1] + uDivZ.z * triTexcoord0[2];
 								dev_fragmentBuffer[pixelIndex].texcoord0 = persTexture * depth;
-
 								//So stupid to use tri[3] but not tryEyePos[3]..... why spend so long on this such stupid problem......
 								//  triTexcoord0[0] /= tri[0].z; 
 								//	triTexcoord0[1] /= tri[1].z;
@@ -1093,7 +1097,6 @@ void rasterizeFree() {
 			cudaFree(p->dev_normal);
 			cudaFree(p->dev_texcoord0);
 			cudaFree(p->dev_diffuseTex);
-
 			cudaFree(p->dev_verticesOut);
 
 			
