@@ -24,6 +24,7 @@ Use CUDA to implement a simplified rasterized graphics pipeline, similar to the 
 * UV texture mapping with perspective correct texture coordinates
 * Support rasterizing Triangles, Lines, Points
 * Super Sampling Anti-Aliasing (SSAA)
+* Correct color interpolation between points on a primitive
 
 ## Project Introduction
 As we all know, rasterizeration converts vector graphics into dot matrix graphics. It is quite popular and important in real-time rendering area. Modern 3D rendering APIs like OpenGL, DirectX (Microsoft), Vulkan (Khronos, quite new area) are all implemented related to rasterize techniques. 
