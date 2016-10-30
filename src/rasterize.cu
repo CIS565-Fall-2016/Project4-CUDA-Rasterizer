@@ -30,7 +30,7 @@
 #define BLINNPHONG 0
 #define LAMBERT 1
 
-#define SSAA 1
+#define SSAA 4
 
 namespace {
 
