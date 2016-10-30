@@ -6,7 +6,7 @@ CUDA Rasterizer
 * Ottavio Hartman
 * Tested on: Windows 10, AMD Fx-8320 @ 3.50GHz 8GB, GTX 1060 3GB (Personal Desktop)
 
-#### Video:
+### Video:
 [![Youtube Link](img/Duck_blinn_phong2.PNG)](https://youtu.be/FjwkaiwPMLU)
 ### Overview
 I have implemented an efficient CUDA rasterizer with Blinn-Phong shading, support for triangles, lines, and points, and an efficient blur using shared memory. The basic overview of the pipeline I used is as follows: 
@@ -47,30 +47,30 @@ The box blur is a kernel which runs on every pixel and loops through all of its 
 ### Performance/Optimizations
 While the rasterization pipeline is relatively simple to implement, making it efficient is harder and crucial to the rasterizer's performance.
 #### Bounding boxes
-The simplest improvement I made to the rasterizer is using bounding boxes to reduce the number of pixels the rasterizer kernel needs to search through to hit-test. The `cow` model, without bounding boxes, takes __318 - 330ms__ per frame. With bounding boxes, it improves to __1.18-1.22ms__ per frame. This massive improvement has to do with the fact 
-Measured using cuda events
+The simplest improvement I made to the rasterizer is using bounding boxes to reduce the number of pixels the rasterizer kernel needs to search through to hit-test. The `cow` model, without bounding boxes, takes __318 - 330ms__ per frame. With bounding boxes, it improves to __1.18-1.22ms__ per frame. This massive improvement is caused by the rasterizer kernel looping over a much smaller fraction of pixels (just the bounding box, as opposed to the entire screen).
 
 #### Shared Memory
-72-72 ms per frame - 21x21 - 8x8 blocks
-60-61 ms per frame - 21x21 - 16x16 blocks
-16x16 shared memory 
+The blur kernel was optimized using shared memory. Because of the nature of blurring, it lends itself nicely to utilizing shared memory because each pixel reads from its close neighbors. Thus, dividing the framebuffer into a grid of pixels where each block in the grid is the size of the blocks launched for the kernel allows the kernel to use shared memory.
 
-Without framebuffer[index] +=.... 14ms per frame
-With shared memory...
+Now, not every pixel which is sampled can be in the shared memory "cache" because the blur can extend outside of the grid boundary. The image below shows what the image would look like if only the shared memory were used and the kernel never looked up global memory. Notice how the image is divided into a grid--the dark edges of the grid cells are pixels which should be polling global memory because they are near the boundary of the shared memory tile.
 
+![duck](img/Duck_shared_memory.PNG)
+
+Initially, I experimented with the block size of the kernel launch (which translates to the size of the pixel grid). The blur is a 21x21 box blur, which means each pixel samples 441 pixels from global memory.
+
+![block size](img/blur_blocksize.png)
+
+A block size of 32x32 would have been pushing the limits of the shared memory size on some GPUs, so I left it untested (it would require 32*32*12=12288 bytes of shared memory per block. This would mean only 4 blocks could run on a multiprocessor with 48KB shared memory which would be large limiting factor depending on the GPU).
+
+The performance benefit of the 16x16 shared memory is as follows:
+
+![shared](img/shared_global.png)
 11x11 - global - 4.10ms
 11x11 - shared - 3.15ms
-23% improvement
-
-21x21 - global - 14.2ms
-21x21 - shared - 9.50ms
-33% improvement
-
-420 global accesses, 21 shared.... (for one random pixel)
-- 21x21 blur is bigger than blocks, so very little shared memory used
+For the 11x11 blur, the shared memory made a 23% improvement in speed. The 21x21 blur saw a 33% improvement in speed when using shared memory. The larger improvement in the 21x21 blur is counterintuitive because it has to rely more on the global lookups since every pixel looks outside of its shared memory cache because the cache is only 16x16 in size.
 
 #### Rasterization pipeline and bottlenecks
-![duck](img/Duck_shared_memory.PNG)
+
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
