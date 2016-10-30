@@ -66,6 +66,7 @@ Here we compare the performance of our rasterizer under basic feature, 4xSSAA an
 This is the performance graph of rendering the milk truck. In MSAA we separate and perform depth test before rasterization, in order to render pixels based on nearby positions later in rasterization step. We can observe that MSAA is much faster than SSAA, as we are only super sampling pixels on fragment edges.
 
 ![](/img/performance_duck.png)
+
 This is the performance comparison of rendering duck. It shows similar results as the earlier graph. Also we could observe the proportion of processing rasterization is not as large as rendering milk truck. This is because in this case the fragment pixel count is not as large as the previous example.
 
 ### Credits
