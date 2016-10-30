@@ -82,7 +82,7 @@ Tile based rasterization does a good job on big primitives, but when there are m
 One reason for tile based rasterization is not fast enough may be that I am copying primitives to tile buffers, and if multiple tiles are sharing a primitive, I was copying the primitive multiple times (while still accessing them in global memory during rasterization)... One improvement will be storing just indices for primitive buffer at tile buffer, another will be using shared memory for tiles
 
 ##### Known Issue:
-Currently, primitives numbers for each tile is fixed at a maximum of 64 in my implementation, and it stops accepting new primitives full, which may lead to some artifacts if scene is complex.  
+Currently, limit of primitive count for each tile is fixed as a constant value (64) in my implementation, and it stops accepting new primitives when full, which may lead to some artifacts if too many primitives should be located in one tile.  
 
 ![engine_incorrect](/screenshots/engine_incorrect.gif)
 
