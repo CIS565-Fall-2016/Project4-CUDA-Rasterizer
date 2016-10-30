@@ -338,8 +338,6 @@ static std::string getFilePathExtension(const std::string &FileName) {
 	return "";
 }
 
-
-
 //-----------------------------
 //---- Mouse control ----------
 //-----------------------------
