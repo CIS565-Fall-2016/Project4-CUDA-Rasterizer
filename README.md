@@ -126,12 +126,38 @@ The two below are I accidently use the first triangle's vertex normal and create
 
 ## Performance Analysis
 
+###Different Stages of rasterizer time arrangement percentage(Compare between Lines, Points and Triangles)
 
-### Bloopers
+From the picture below, we can see that when we choose triangle as our primitive, the rasterization stage occupies most of time since we do all the fragmentbuffer calculations & filling there, easpecially for the Axis-Aligned Bounding Box(AABB) calculation. In line & point cases, we need to do much less calculations w.s.t fragmentbuffer in rasterization stage, render case as a result plays a larger role to fill the framebuffer. 
+![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/StagePerformance.PNG "Stage Perfomance")
 
+
+###Compare between Super-Sampling Anti-Aliasing(SSAA) and No SSAA
+
+Based on CG knowledge, we all know that SSAA is a time-consuming stage. Since we need to open a larger fragment buffer, frame buffer and depth buffer,  so the calculations maybe mutiple in order to get an average value then send it to PBO.
+Here the result is based on CesiumMilkTruck.gltf, and my table is based on the time/fps.
+
+![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/SSAAPerformance.PNG "SSAA Comparasion")
+
+
+###Compare between Bilinear, Bilinear Texture Filtering,  Perspective Correctness Texture Filtering
+
+Bilinear adds the percentage of the render stage during the whole cuda launch since we need to consider more pixels around to improve correctness(super sampling comes into play again)!
+Perspective Correctness adds the percentage of rasterization, since it contains more interpolation and calculation during the rasterization procedure.
+
+|   | Bilinear Open | Perspective Open | Nothing Opens|
+|------|------|------|------|
+|Rasterization Stage Percentage of GPU(%)| 55.69 | 59.36 | 53.98 |
+|Render Stage Percentage of GPU(%)| 2.06 | 1.5 | 1.76 |
+
+
+| Bilinear Open | Perspective Open | 
+|------|------|
+| ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/BilinearShow.PNG "Bilinear Open") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/PersShow.PNG "Perspective Open") |
 
 ### Credits
 
 * [UPENN CIS-565 GPU Programming : course & recitation slides](https://github.com/CIS565-Fall-2016) by [@Patrick](https://github.com/pjcozzi) [@Shrek](https://github.com/shrekshao) [@Gary](https://github.com/likangning93) 
+* UPENN CIS-561 Advanced Computer Graphics course slides
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
 * [glTF Sample Models](https://github.com/KhronosGroup/glTF/blob/master/sampleModels/README.md)
