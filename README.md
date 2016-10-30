@@ -30,7 +30,7 @@ Use CUDA to implement a simplified rasterized graphics pipeline, similar to the 
 As we all know, rasterizeration converts vector graphics into dot matrix graphics. It is quite popular and important in real-time rendering area. Modern 3D rendering APIs like OpenGL, DirectX (Microsoft), Vulkan (Khronos, quite new area) are all implemented related to rasterize techniques. 
 
 Different from ray tracing technique (as my last project shows), there's no concept of shooting rays during the whole procedure.
-The whole graphics pipeline is like this:
+The whole graphics pipeline is like this: (Sort by stage order)
 
 ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/readmepipeline.jpg "Graphics Pipeline") 
 
@@ -71,8 +71,22 @@ Combine fragment color with framebuffer color
 Write color to framebuffer, a.k.a tell each pixel its color :)
 
 
+## Showcase My Result
+###Lambert and Blinn-Phong shading
+|  Lambert  | Blinn-Phong shading |
+|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/duck_with_lambert.gif "Lambert Duck") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/duck_with_blinn_phong_1.gif "Blinn Phong Duck") |
+
+###UV texture mapping with bilinear texture filtering
+|  Without Bilinear Texture Filtering  | With Bilinear Texture Filtering |
+|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/BilinearEnlarged.png "WithBininear") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/NoBilinearEnlarged.png "NoBininear") |
 
 
+## Performance Analysis
+
+
+### Bloopers
 
 
 ### Credits
