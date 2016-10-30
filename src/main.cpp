@@ -68,16 +68,17 @@ void mainLoop() {
         runCuda();
 
         time_t seconds2 = time (NULL);
-
         if (seconds2 - seconds >= 1) {
-
+			shown_deltatime = deltatime;
             fps = fpstracker / (seconds2 - seconds);
             fpstracker = 0;
             seconds = seconds2;
         }
 
-        string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS";
-        glfwSetWindowTitle(window, title.c_str());
+        //string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS | Per frame: " + utilityCore::convertDoubleToString(timeperframe);
+		string title =  utilityCore::convertIntToString((int)fps) + " FPS | Per frame: " + utilityCore::convertDoubleToString(shown_deltatime);
+
+		glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
         glBindTexture(GL_TEXTURE_2D, displayImage);
@@ -119,7 +120,7 @@ void runCuda() {
 	glm::mat4 MVP = P * MV;
 
     cudaGLMapBufferObject((void **)&dptr, pbo);
-	rasterize(dptr, MVP, MV, MV_normal);
+	rasterize(dptr, MVP, MV, MV_normal, &deltatime);
     cudaGLUnmapBufferObject(pbo);
 
     frame++;
@@ -337,8 +338,6 @@ static std::string getFilePathExtension(const std::string &FileName) {
 		return FileName.substr(FileName.find_last_of(".") + 1);
 	return "";
 }
-
-
 
 //-----------------------------
 //---- Mouse control ----------
