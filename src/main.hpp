@@ -34,6 +34,10 @@ int frame;
 int fpstracker;
 double seconds;
 int fps = 0;
+double timeperframe = 0;
+float deltatime;
+float shown_deltatime;
+
 GLuint positionLocation = 0;
 GLuint texcoordsLocation = 1;
 const char *attributeLocations[] = { "Position", "Tex" };

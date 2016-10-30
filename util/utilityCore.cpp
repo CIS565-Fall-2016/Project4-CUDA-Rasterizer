@@ -31,6 +31,12 @@ bool utilityCore::replaceString(std::string &str, const std::string &from, const
     return true;
 }
 
+std::string utilityCore::convertDoubleToString(double d) {
+	std::stringstream ss;
+	ss << d;
+	return ss.str();
+}
+
 std::string utilityCore::convertIntToString(int number) {
     std::stringstream ss;
     ss << number;

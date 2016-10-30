@@ -116,6 +116,8 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
+cudaEvent_t t_start, t_stop;
+
 #if TILE_BASED_RASTERIZATION
 // FIXME: tile size is hard to manage
 
@@ -125,7 +127,7 @@ static int tile_h_count = 0;
 const int tile_width = 16;
 const int tile_height = 16;
 
-const int max_tile_prim_count = 64;
+const int max_tile_prim_count = 128;
 static Primitive * dev_tile_primitives = nullptr;
 static int * dev_tile_prim_counts = nullptr;
 #endif
@@ -245,6 +247,10 @@ void rasterizeInit(int w, int h) {
 	cudaMemset(dev_frag_mutex, 0, width * height * sizeof(dev_frag_mutex[0]));
 
 	checkCUDAError("rasterizeInit");
+
+
+	cudaEventCreate(&t_start);
+	cudaEventCreate(&t_stop);
 }
 
 __global__
@@ -1005,7 +1011,7 @@ __global__ void kernRasterizePrimitives(
 /**
  * Perform rasterization.
  */
-void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal, float* deltatime) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
@@ -1013,6 +1019,8 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 
 	// Execute your rasterization pipeline here
 	// (See README for rasterization pipeline outline.)
+
+	cudaEventRecord(t_start);
 
 	// Vertex Process & primitive assembly
 	{
@@ -1103,6 +1111,10 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, output_width, output_height, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
+
+	cudaEventRecord(t_stop);
+	cudaEventSynchronize(t_stop);
+	cudaEventElapsedTime(deltatime, t_start, t_stop);
 }
 
 /**
@@ -1154,4 +1166,7 @@ void rasterizeFree() {
 	dev_frag_mutex = nullptr;
 
     checkCUDAError("rasterize Free");
+
+	cudaEventDestroy(t_start);
+	cudaEventDestroy(t_stop);
 }
