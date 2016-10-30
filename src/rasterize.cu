@@ -25,12 +25,12 @@
 #define LINE 0
 
 #define BILINEAR 0
-#define PERSPECTIVE 0
+#define PERSPECTIVE 1
 
 #define BLINNPHONG 0
-#define LAMBERT 0
+#define LAMBERT 1
 
-#define SSAA 2
+#define SSAA 1
 
 namespace {
 
@@ -264,15 +264,15 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		}
 #else
 		
-		diffuseColor = curFrag.color;
-		////For normal case
-		//if (texture!= NULL) {
-		//	diffuseColor = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
-		//	//framebuffer[index] = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
-		//} else {
-		//	diffuseColor = curFrag.color;
-		//	//framebuffer[index] = fragmentBuffer[index].color;
-		//}
+	//	diffuseColor = curFrag.color;
+		//For normal case
+		if (texture!= NULL) {
+			diffuseColor = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
+			//framebuffer[index] = glm::vec3(texture[uvIndex] / 255.f, texture[uvIndex + 1] / 255.f, texture[uvIndex + 2] / 255.f);
+		} else {
+			diffuseColor = curFrag.color;
+			//framebuffer[index] = fragmentBuffer[index].color;
+		}
 #endif
 
 		glm::vec3 returnedColor = diffuseColor;
@@ -284,7 +284,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		returnedColor = ambientColor * ambientCoef * lightIntensity + lightIntensity * (diffuseCoef * cosangle * diffuseColor + specularCoef * specularColor);//* attenuation;
 
 #elif LAMBERT
-		returnedColor = diffuseColor * cosangle;
+		returnedColor = diffuseColor * cosangle; 
 #endif
 		framebuffer[index] = returnedColor;
 	//	framebuffer[index] = returnedColorWithSpecular;
@@ -833,7 +833,7 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
 	// index id
 	int iid = (blockIdx.x * blockDim.x) + threadIdx.x;	
 	if (iid < numIndices) {
-		glm::vec3 rgb[3] = { glm::vec3(1.f, 1.f, 0.f), glm::vec3(0.f, 1.f, 1.f), glm::vec3(1.f, 0.f, 1.f) };
+		glm::vec3 rgb[3] = { glm::vec3(0.5f, 0.7f, 0.f), glm::vec3(0.f, 0.8f, 0.7f), glm::vec3(0.6f, 0.f, 0.8f) };
 		// TODO: uncomment the following code for a start
 		// This is primitive assembly for triangles
 		//Primitive assembly groups vertices forming one primitive
@@ -917,7 +917,7 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 		glm::vec2 triTexcoord0[3] = { dev_primitives[idx].v[0].texcoord0, dev_primitives[idx].v[1].texcoord0, dev_primitives[idx].v[2].texcoord0 };
 		// bounding box for a given triangle
 		// test color
-		// glm::vec3 color(1.f, 0.5f, 0.5f);
+		glm::vec3 color(1.f, 0.9f, 0.9f);
 
 		int pixelIndex;
 
@@ -994,7 +994,7 @@ __global__ void _rasterization(int totalNumPrimitives, Primitive *dev_primitives
 				pixelIndex = x + y * width;
 				if (x < 0 || x > width - 1 || y < 0 || y > width - 1) continue;
 				//dev_fragmentBuffer[pixelIndex].color = color;
-				dev_fragmentBuffer[pixelIndex].color = glm::vec3(float(x) / width, 0.f, float(x) / width);
+				dev_fragmentBuffer[pixelIndex].color = color;//glm::vec3(float(x) / width, 0.f, float(x) / width);
 				prob++;
 			}
 	//	}
