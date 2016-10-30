@@ -9,7 +9,7 @@ CUDA Rasterizer
 ## Project Objective
 Use CUDA to implement a simplified rasterized graphics pipeline, similar to the OpenGL pipeline. 
 
-## My Project Features
+## My CUDA Rasterizer Features
 ### About Graphics Pipeline
 * Vertex shading
 * Primitive assembly with support for triangles read from buffers of index and vertex data
@@ -31,16 +31,26 @@ As we all know, rasterizeration converts vector graphics into dot matrix graphic
 Different from ray tracing technique (as my last project shows), there's no concept of shooting rays during the whole procedure.
 The whole graphics pipeline is like this:
 
+
 * 1. Vertex Assembly
 
 Pull together a vertex from one or more buffers
 
+
 * 2. Vertex Shader
+
 Transform incoming vertex position from model to clip coordinates
 
 `World Space ->  View Space -> Clipping Space -> Normalized Device Coordinates (NDC) Space -> Viewport (Screen/Window) Space`
 
 
+* 3. Primitive Assembly
+
+A vertex shader processes one vertex.  Primitive asstriangleembly groups vertices forming one primitive, e.g., a, line, etc.
+
+* 4. Rasterization
+
+Determine what pixels a primitive overlaps
 
 
 
@@ -48,5 +58,6 @@ Transform incoming vertex position from model to clip coordinates
 
 ### Credits
 
+* [UPENN CIS-565 GPU Programming : course & recitation slides](https://github.com/CIS565-Fall-2016) by [@Patrick](https://github.com/pjcozzi) [@Shrek](https://github.com/shrekshao) [@Gary](https://github.com/likangning93) 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)
 * [glTF Sample Models](https://github.com/KhronosGroup/glTF/blob/master/sampleModels/README.md)
