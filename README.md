@@ -65,12 +65,23 @@ A block size of 32x32 would have been pushing the limits of the shared memory si
 The performance benefit of the 16x16 shared memory is as follows:
 
 ![shared](img/shared_global.png)
-11x11 - global - 4.10ms
-11x11 - shared - 3.15ms
+
 For the 11x11 blur, the shared memory made a 23% improvement in speed. The 21x21 blur saw a 33% improvement in speed when using shared memory. The larger improvement in the 21x21 blur is counterintuitive because it has to rely more on the global lookups since every pixel looks outside of its shared memory cache because the cache is only 16x16 in size.
 
-#### Rasterization pipeline and bottlenecks
+#### Rasterization pipeline
+Below are the times for triangles, lines, and points to rasterize on different models.
 
+![duck](img/duck_tpl.png)
+
+![cow](img/cow_tpl.png)
+
+![truck](img/truck_tpl.png)
+
+Clearly, the triangle rasterization takes much longer than rasterizing lines and points. In addition, it takes significantly longer when there are large triangles on screen (like when an object is near the camera), whereas the lines and points don't have a "scaling problem"; they remain very fast no matter how close an object is.
+
+The rasterization pipeline timing is below. The blur function, despite using shared memory, takes up a majority of the rendering time. This is due to the sheer number of calculations each pixel needs to do for a 21x21 blur.
+
+![performance](img/performance.png)
 ### Credits
 
 * [tinygltfloader](https://github.com/syoyo/tinygltfloader) by [@soyoyo](https://github.com/syoyo)

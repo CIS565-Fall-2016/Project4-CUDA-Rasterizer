@@ -180,8 +180,11 @@ void render(int w, int h, Light l, Fragment *fragmentBuffer, glm::vec3 *framebuf
 			specular = pow(specAngle, 16.0f);
 
 		}
-
+#ifdef TRI
 		framebuffer[index] = fragmentBuffer[index].color *diffuse + specular;
+#else
+		framebuffer[index] = fragmentBuffer[index].color;// *diffuse + specular;
+#endif
     }
 }
 
@@ -217,7 +220,7 @@ void blur(int w, int h, glm::vec3 *framebuffer_in, glm::vec3 *framebuffer_out) {
 			for (int j = -10; j <= 10; j++) {
 				int neigh;
 				if ((local_x + i) < 0 || (local_x + i) >= BLOCK_WIDTH ||
-					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH || true) {
+					(local_y + j) < 0 || (local_y + j) >= BLOCK_WIDTH) {
 					// Can't use shared memory
 
 					neigh = x + i + ((y + j) * w);
@@ -1017,7 +1020,7 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	std::cout << "Effects: " << effects_milliseconds << " milliseconds" << std::endl;
 
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
-    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_preeffectbuffer);
+    sendImageToPBO<<<blockCount2d, blockSize2d>>>(pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");
 }
 
