@@ -24,7 +24,7 @@
 #define POINT 0
 #define LINE 0
 
-#define BILINEAR 0
+#define BILINEAR 1
 #define PERSPECTIVE 1
 
 #define BLINNPHONG 0
