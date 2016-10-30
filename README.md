@@ -77,6 +77,10 @@ Performance comparison between __tile based rasterization__ and __per-primitive 
 | CheckerBoard, 2x2 SSAA, close view, tile based    | 12.5                   |
 | CheckerBoard, 2x2 SSAA, close view, per-primitive | 738.6                  |
 
+Speed for checker (2 triangles) with tile-based rasterization | Speed without tile-based rasterization
+:-------------------------:|:-------------------------:
+![tile-based-checker](/screenshots/tile-based-checker.jpg)  |  ![duck_ssaa](/screenshots/per-primitive-checker.jpg)
+
 Tile based rasterization does a good job on big primitives, but when there are many small primitives, per-primitive rasterization can be faster.
 
 One reason for tile based rasterization is not fast enough may be that I am copying primitives to tile buffers, and if multiple tiles are sharing a primitive, I was copying the primitive multiple times (while still accessing them in global memory during rasterization)... One improvement will be storing just indices for primitive buffer at tile buffer, another will be using shared memory for tiles
