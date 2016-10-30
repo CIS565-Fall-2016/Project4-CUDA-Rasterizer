@@ -78,9 +78,20 @@ Write color to framebuffer, a.k.a tell each pixel its color :)
 |![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/duck_with_lambert.gif "Lambert Duck") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/duck_with_blinn_phong_1.gif "Blinn Phong Duck") |
 
 ###UV texture mapping with bilinear texture filtering
+We could see the apparant better result of Bilinear Texture Filtering since we take into account more texture infomation.
+
 |  Without Bilinear Texture Filtering  | With Bilinear Texture Filtering |
 |------|------|
 |![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/BilinearEnlarged.png "WithBininear") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/NoBilinearEnlarged.png "NoBininear") |
+
+###UV texture mapping with perspective correct texture coordinates
+
+We figure out the texture coordinates in a more sophisticated way. We interpolate texture coordinates, and then do the perspective divide.
+
+|  Without Perspective Correctness | With Perspective Correctness |
+|------|------|
+|![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/WithoutPerspectiveCorrectnessCheckerBoard.PNG "WithoutPerspective") | ![alt text](https://github.com/xueyinw/Project4-CUDA-Rasterizer/blob/master/results/PerspectiveCorrectnessCheckerBoard.PNG "WithPerspective") |
+
 
 
 ## Performance Analysis
