@@ -6,6 +6,9 @@
  * @copyright University of Pennsylvania & STUDENT
  */
 
+#include <random>
+#include <functional>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cuda.h>
@@ -78,6 +81,7 @@ namespace {
 		int diffuseTexWidth;
 		int diffuseTexHeight;
 		int shouldShade;
+		float ssaoFactor;
 		// ...
 	};
 
@@ -121,14 +125,25 @@ static Primitive *dev_primitives = NULL;
 static Fragment *dev_fragmentBuffer = NULL;
 static glm::vec3 *dev_framebuffer = NULL;
 
-static int * dev_depth = NULL;	// you might need this buffer when doing depth test
+static float *dev_depth = NULL;	// you might need this buffer when doing depth test
 
+// Tile-based rasterization
 static int numTilesX = 0;
 static int numTilesY = 0;
 static int triListSize = 0;
 static int *dev_primCounts = nullptr; // one entry per tile
 static int *dev_tileTriLists = nullptr;
 
+// SSAO
+static float sampleKernelRadius = 3.f;
+static int numSamples = 64;
+static int noiseTexSize1D = 4;
+// random points in a upper hemisphere whose z axis will be rotated to align
+// with pixel normal in eye space
+static glm::vec3 *dev_samples = nullptr;
+// A 4x4 noise texture. Each pixel contains an x-axis randomly rotated in the x-y plane
+// Will be tiled across the entire frame buffer
+static glm::vec3 *dev_noiseTex = nullptr;
 
 /**
  * Kernel that writes the image to the OpenGL PBO directly.
@@ -211,10 +226,146 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		float costheta = glm::max(0.f, glm::dot(lightDir, eyeNor));
 
 		framebuffer[index] =
-			Ka * ambientColor +
-			Kd * diffuseColor * costheta +
-			Ks * specularColor * powf(costhetah, specExp);
+			//fragmentBuffer[index].ssaoFactor * (
+			//Ka * ambientColor +
+			//Kd * diffuseColor * costheta +
+			//Ks * specularColor * powf(costhetah, specExp));
+			glm::vec3(fragmentBuffer[index].ssaoFactor);
     }
+}
+
+__device__ glm::mat3 coordinateSystemZFromZX(const glm::vec3 &z, const glm::vec3 &x)
+{
+	glm::vec3 t = glm::normalize(x - glm::dot(z, x) * z);
+	glm::vec3 b = glm::cross(z, t);
+	return glm::mat3(t, b, z);
+}
+
+__global__ void ssaoBlur(int width, int height, int blurSize, Fragment *fragmentBuffer)
+{
+	extern __shared__ float s_ssaoFactors[];
+
+	int padding = blurSize >> 1;
+	int startX = blockIdx.x * (blockDim.x - padding * 2) - padding;
+	int startY = blockIdx.y * (blockDim.y - padding * 2) - padding;
+	int gx = startX + threadIdx.x;
+	int gy = startY + threadIdx.y;
+	
+	if (gx >= 0 && gx < width && gy >= 0 && gy < height)
+	{
+		s_ssaoFactors[threadIdx.y * blockDim.x + threadIdx.x] = fragmentBuffer[gy * width + gx].ssaoFactor;
+	}
+	else
+	{
+		s_ssaoFactors[threadIdx.y * blockDim.x + threadIdx.x] = 0.f;
+	}
+
+	__syncthreads();
+
+	if (threadIdx.x >= padding && threadIdx.x < blockDim.x - padding &&
+		threadIdx.y >= padding && threadIdx.y < blockDim.y - padding &&
+		gx < width && gy < height)
+	{
+		float average = 0.f;
+		int base = -padding;
+
+		for (int i = 0; i < blurSize; ++i)
+		{
+			for (int j = 0; j < blurSize; ++j)
+			{
+				average += s_ssaoFactors[(threadIdx.y + base + i) * blockDim.x + (threadIdx.x + base + j)];
+			}
+		}
+
+		fragmentBuffer[gy * width + gx].ssaoFactor = average / static_cast<float>(blurSize * blurSize);
+	}
+}
+
+/**
+ * Compute occlusion values for each pixel
+ */
+__global__ void computeSSAO(int width, int height,
+	glm::mat4 proj,
+	int NoiseTexSize1D, const glm::vec3 *noiseTex,
+	float sampleKernelRadius, int numSamples, const glm::vec3 *samples,
+	Fragment *fragmentBuffer)
+{
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	int index = x + (y * width);
+
+	if (x < width && y < height)
+	{
+		Fragment &frag = fragmentBuffer[index];
+		glm::vec3 eyePos = frag.eyePos;
+		glm::vec3 eyeNrm = frag.eyeNor;
+		glm::vec3 right = noiseTex[(x & (NoiseTexSize1D - 1)) + NoiseTexSize1D * (y & (NoiseTexSize1D - 1))];
+		glm::mat3 tbn = coordinateSystemZFromZX(eyeNrm, right);
+
+		float occlusion = 0.f;
+
+		for (int i = 0; i < numSamples; ++i)
+		{
+			// transform the sample into eye space
+			glm::vec3 sample = tbn * samples[i];
+			sample = eyePos + sampleKernelRadius * sample;
+
+			// project the sample onto screen space
+			glm::vec4 ss = proj * glm::vec4(sample, 1.0);
+			ss.x = (ss.x / ss.w * .5f + .5f) * width;
+			ss.y = (ss.y / ss.w * .5f + .5f) * height;
+
+			// get pixel depth at sample postion
+			// depth value needs to be linear for the range check to actually make sense
+			int sx = static_cast<int>(ss.x + .5f);
+			int sy = static_cast<int>(ss.y + .5f);
+			float sampleDepth = (sx < 0 || sx >= width || sy < 0 || sy >= height) ? 0.f : fragmentBuffer[sy * width + sx].eyePos.z;
+			float rangeCheck = fabs(eyePos.z - sampleDepth) < sampleKernelRadius ? 1.f : 0.f;
+			occlusion += ((sampleDepth > sample.z) ? 1.f : 0.f) * rangeCheck;
+		}
+
+		frag.ssaoFactor = 1.f - occlusion / static_cast<float>(numSamples);
+	}
+}
+
+/**
+ * Generate samples and noise texture on CPU.
+ * Copy results into GPU buffers.
+ */
+void ssaoInit()
+{
+	auto seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+	auto u01 = std::bind(std::uniform_real_distribution<float>(0.f, 1.f), std::mt19937(seed));
+	auto u_11 = std::bind(std::uniform_real_distribution<float>(-1.f, 1.f), std::mt19937(seed));
+
+	std::vector<glm::vec3> samples(numSamples);
+	for (int i = 0; i < numSamples; ++i)
+	{
+		glm::vec3 s(u_11(), u_11(), u01());
+		s = glm::normalize(s);
+		float scale = static_cast<float>(i) / static_cast<float>(numSamples);
+		scale *= scale;
+		scale = (1.f - scale) * .1f + scale;
+		s *= scale;
+		samples[i] = s;
+	}
+
+	int noiseTexSize2D = noiseTexSize1D * noiseTexSize1D;
+	std::vector<glm::vec3> noiseTex(noiseTexSize2D);
+	for (int i = 0; i < noiseTexSize2D; ++i)
+	{
+		glm::vec3 x(u_11(), u_11(), 0.f);
+		x = glm::normalize(x);
+		noiseTex[i] = x;
+	}
+
+	cudaFree(dev_samples);
+	cudaMalloc(&dev_samples, numSamples * sizeof(glm::vec3));
+	cudaMemcpy(dev_samples, samples.data(), numSamples * sizeof(glm::vec3), cudaMemcpyHostToDevice);
+
+	cudaFree(dev_noiseTex);
+	cudaMalloc(&dev_noiseTex, noiseTexSize2D * sizeof(glm::vec3));
+	cudaMemcpy(dev_noiseTex, noiseTex.data(), noiseTexSize2D * sizeof(glm::vec3), cudaMemcpyHostToDevice);
 }
 
 /**
@@ -231,7 +382,7 @@ void rasterizeInit(int w, int h) {
     cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
     
 	cudaFree(dev_depth);
-	cudaMalloc(&dev_depth, width * height * sizeof(int));
+	cudaMalloc(&dev_depth, width * height * sizeof(float));
 
 	numTilesX = ROUND_UP_DIV(w, TILE_SIZE);
 	numTilesY = ROUND_UP_DIV(h, TILE_SIZE);
@@ -240,6 +391,8 @@ void rasterizeInit(int w, int h) {
 	cudaFree(dev_primCounts);
 	cudaMalloc(&dev_primCounts, numTiles * sizeof(int));
 	cudaFree(dev_tileTriLists);
+
+	ssaoInit();
 
 	checkCUDAError("rasterizeInit");
 }
@@ -924,7 +1077,7 @@ __global__ void fillTileTriLists(int numPrims, int numTilesX, int numTilesY, int
 __global__ void tileBasedRasterize(
 	int numPrims, int width, int height, int numTilesX, int numTilesY, int triListSize,
 	const Primitive *primitives, int *primCounts, int *tileTriLists,
-	int *depthBuff, Fragment *fragments)
+	float *depthBuff, Fragment *fragments)
 {
 	float l_depthBuff = 1.f;
 	Fragment l_fragment{};
@@ -979,7 +1132,7 @@ __global__ void tileBasedRasterize(
 		}
 	}
 
-	depthBuff[pixIdx] = static_cast<int>(l_depthBuff * INT_MAX);
+	depthBuff[pixIdx] = l_depthBuff;
 	fragments[pixIdx] = l_fragment;
 }
 
@@ -987,7 +1140,7 @@ __global__ void tileBasedRasterize(
 /**
  * Perform rasterization.
  */
-void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal) {
+void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const glm::mat3 MV_normal, const glm::mat4 &P) {
     int sideLength2d = 8;
     dim3 blockSize2d(sideLength2d, sideLength2d);
     dim3 blockCount2d((width  - 1) / blockSize2d.x + 1,
@@ -1046,6 +1199,15 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 	//initDepth<<<blockCount2d, blockSize2d>>>(width, height, dev_depth);
 	//_rasterize<<<numBlocks, blockSize1d>>>(totalNumPrimitives, width, height, dev_primitives, dev_depth, dev_fragmentBuffer);
 
+	computeSSAO<<<blockCount2d, blockSize2d>>>(width, height, P, noiseTexSize1D, dev_noiseTex, sampleKernelRadius, numSamples, dev_samples, dev_fragmentBuffer);
+	checkCUDAError("computeSSAO");
+
+	int blurSize = noiseTexSize1D;
+	int padding = blurSize >> 1;
+	dim3 blurBlockSize3(sideLength2d + 2 * padding, sideLength2d + 2 * padding, 1);
+	ssaoBlur<<<blockCount2d , blurBlockSize3, blurBlockSize3.x * blurBlockSize3.y * sizeof(float)>>>(width, height, blurSize, dev_fragmentBuffer);
+	checkCUDAError("ssaoBlur");
+
     // Copy depthbuffer colors into framebuffer
 	cudaMemset(dev_framebuffer, 0, width * height * sizeof(glm::vec3));
 	render<<<blockCount2d, blockSize2d>>>(width, height, dev_fragmentBuffer, dev_framebuffer);
@@ -1098,6 +1260,12 @@ void rasterizeFree() {
 
 	cudaFree(dev_tileTriLists);
 	dev_tileTriLists = nullptr;
+
+	cudaFree(dev_samples);
+	dev_samples = nullptr;
+
+	cudaFree(dev_noiseTex);
+	dev_noiseTex = nullptr;
 
     checkCUDAError("rasterize Free");
 }
