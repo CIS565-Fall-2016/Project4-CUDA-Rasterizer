@@ -20,6 +20,7 @@ CUDA Rasterizer
   * Rasterization
   * Depth test
   * Fragment shader
+* SSAO
 * Tile-based rasterization
 * Texture mapping with perspective-correct interpolation and bilinear filtering
 * Back face culling
@@ -30,6 +31,20 @@ CUDA Rasterizer
 
 ### Performance Analysis
 
+* SSAO
+  * Implemented after due date. Please do not count it into my grade because I don't want to use my late days.
+  * Screen space ambient occlusion darkens area where occlusion is likely to happen. The main idea is that you take a bunch of samples in the upper hemisphere and at run time, for each pixel, you transform the samples into eye space, randomly rotate them about z-axis, and align the z-axis of their local frame with the eye-space normal of the pixel. Then you project the samples onto screen space and compare their depth with the depth of the pixel at that point (need to use LINEAR depth). A sample is occluded if the pixel is before it (less deep). The goal is to compute the ratio of samples being occluded and darken pixel color accordingly.
+  * SSAO is not physically accurate but it is usually visually plausible and cheap enough for real-time rendering. The effect is usually subtle but does enhance realism of object appearance.
+  * In the test, I used 64 samples and a 4x4 noise texture. The cost is about 3 ms. This cost scales with render target resolution and is not affected by scene complexity.
+  ![](renders/ssao_perf.png)
+  
+  | 2_cylineder_engine | di |
+  | --- | --- |
+  | ![](renders/ssao_engine.png) | ![](renders/ssao_di.png) |
+  
+  | SSAO On | SSAO Off |
+  | --- | --- |
+  | ![](renders/ssao_demo1.png) | ![](renders/ssao_demo2.png) |
 * Tile-based rasterization
   * The following graph shows the performance of tile-based (with/without culling) and per-primitive rasterization tested on various 3D models. It shows that tile-based approach has better performance on models that have fewer but bigger triangles but it is slightly slower than the basic approach when the scene is composed of small triangles. Even if so, tile-based approach is more stable in terms of execution time and totally eliminates write conflicts. The drawback is that we need more memory to mantain a list of triangles for each tile. The size of extra memory required can be quite large if we choose to be safe and we may risk data corruption if we make it too small. Back face culling is important here because it can significantly reduce the number of triangles each tile may overlap and thus reduce the size of triangle list and improves performance.
   ![](renders/ras_perf.png)
