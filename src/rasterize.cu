@@ -135,9 +135,9 @@ static int *dev_primCounts = nullptr; // one entry per tile
 static int *dev_tileTriLists = nullptr;
 
 // SSAO
-static float sampleKernelRadius = 3.f;
-static int numSamples = 64;
-static int noiseTexSize1D = 4;
+extern float sampleKernelRadius;
+static const int numSamples = 64;
+static const int noiseTexSize1D = 4;
 // random points in a upper hemisphere whose z axis will be rotated to align
 // with pixel normal in eye space
 static glm::vec3 *dev_samples = nullptr;
@@ -226,11 +226,11 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 		float costheta = glm::max(0.f, glm::dot(lightDir, eyeNor));
 
 		framebuffer[index] =
-			//fragmentBuffer[index].ssaoFactor * (
-			//Ka * ambientColor +
-			//Kd * diffuseColor * costheta +
-			//Ks * specularColor * powf(costhetah, specExp));
-			glm::vec3(fragmentBuffer[index].ssaoFactor);
+			fragmentBuffer[index].ssaoFactor * (
+			Ka * ambientColor +
+			Kd * diffuseColor * costheta +
+			Ks * specularColor * powf(costhetah, specExp));
+			//glm::vec3(fragmentBuffer[index].ssaoFactor);
     }
 }
 
@@ -303,6 +303,7 @@ __global__ void computeSSAO(int width, int height,
 		glm::mat3 tbn = coordinateSystemZFromZX(eyeNrm, right);
 
 		float occlusion = 0.f;
+		const float deepestDepth = -FLT_MAX * .5f; // the camera is looking into -z
 
 		for (int i = 0; i < numSamples; ++i)
 		{
@@ -319,7 +320,8 @@ __global__ void computeSSAO(int width, int height,
 			// depth value needs to be linear for the range check to actually make sense
 			int sx = static_cast<int>(ss.x + .5f);
 			int sy = static_cast<int>(ss.y + .5f);
-			float sampleDepth = (sx < 0 || sx >= width || sy < 0 || sy >= height) ? 0.f : fragmentBuffer[sy * width + sx].eyePos.z;
+			bool isNotValid = sx < 0 || sx >= width || sy < 0 || sy >= height || !fragmentBuffer[sy * width + sx].shouldShade;
+			float sampleDepth = isNotValid ? deepestDepth : fragmentBuffer[sy * width + sx].eyePos.z;
 			float rangeCheck = fabs(eyePos.z - sampleDepth) < sampleKernelRadius ? 1.f : 0.f;
 			occlusion += ((sampleDepth > sample.z) ? 1.f : 0.f) * rangeCheck;
 		}

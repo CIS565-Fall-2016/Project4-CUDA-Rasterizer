@@ -17,6 +17,7 @@
 //-------------------------------
 //-------------MAIN--------------
 //-------------------------------
+float sampleKernelRadius = 1.f;
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -94,7 +95,8 @@ void mainLoop()
         }
 
         string title = "CIS565 Rasterizer | " + utilityCore::convertIntToString((int)fps) + " FPS | " +
-			utilityCore::convertFloatToString(averageRunCudaTimeMs) + " ms";
+			utilityCore::convertFloatToString(averageRunCudaTimeMs) + " ms | " +
+			"Radius: " + utilityCore::convertFloatToString(sampleKernelRadius);
         glfwSetWindowTitle(window, title.c_str());
 
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pbo);
@@ -113,6 +115,11 @@ void mainLoop()
 //-------------------------------
 //---------RUNTIME STUFF---------
 //-------------------------------
+enum WhichVarToChange
+{
+	None,
+	SampleKernelRadius
+} whichVarToChange;
 float scale = 1.0f;
 float x_trans = 0.0f, y_trans = 0.0f, z_trans = -10.0f;
 float x_angle = 0.0f, y_angle = 0.0f;
@@ -129,8 +136,8 @@ void runCuda() {
 		glm::translate(glm::vec3(x_trans, y_trans, z_trans))
 		* glm::rotate(x_angle, glm::vec3(1.0f, 0.0f, 0.0f))
 		* glm::rotate(y_angle, glm::vec3(0.0f, 1.0f, 0.0f))
-		* glm::scale(glm::vec3(1.f, 1.f, 1.f));
-		//* glm::scale(glm::vec3(.01f, .01f, .01f));
+		//* glm::scale(glm::vec3(1.f, 1.f, 1.f));
+		* glm::scale(glm::vec3(.01f, .01f, .01f));
 
 	glm::mat3 MV_normal = glm::transpose(glm::inverse(glm::mat3(V) * glm::mat3(M)));
 	glm::mat4 MV = V * M;
@@ -148,7 +155,10 @@ void runCuda() {
 //----------SETUP STUFF----------
 //-------------------------------
 
-bool init(const tinygltf::Scene & scene) {
+bool init(const tinygltf::Scene & scene)
+{
+	whichVarToChange = None;
+
     glfwSetErrorCallback(errorCallback);
 
     if (!glfwInit()) {
@@ -345,6 +355,28 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GL_TRUE);
     }
+	else if (key == GLFW_KEY_1 && action == GLFW_PRESS)
+	{
+		whichVarToChange = (whichVarToChange == SampleKernelRadius) ? None : SampleKernelRadius;
+	}
+	else if (key == GLFW_KEY_UP && action == GLFW_PRESS)
+	{
+		switch (whichVarToChange)
+		{
+		case SampleKernelRadius:
+			sampleKernelRadius += .1f;
+			break;
+		}
+	}
+	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS)
+	{
+		switch (whichVarToChange)
+		{
+		case SampleKernelRadius:
+			sampleKernelRadius -= .1f;
+			break;
+		}
+	}
 }
 
 //----------------------------
