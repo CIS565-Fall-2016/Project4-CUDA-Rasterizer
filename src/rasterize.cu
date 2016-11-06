@@ -120,6 +120,7 @@
 
 		// Vertex Out, vertex used for rasterization, this is changing every frame
 		VertexOut* dev_verticesOut;
+		PrimitiveDevBufPointers(){}
 		PrimitiveDevBufPointers(int tPrimitiveMode,
 								PrimitiveType tPrimitiveType,
 								int tNumPrimitives,
@@ -208,7 +209,7 @@ void render(int w, int h, Fragment *fragmentBuffer, glm::vec3 *framebuffer) {
 	glm::vec3 lightPos(5.0f, 5.0f, 5.0f);
 	Fragment cacheFragment = fragmentBuffer[index];
 	if (x < w && y < h && cacheFragment.hasColor) {
-		float diffuseTerm = 0.4 * glm::clamp(glm::dot(cacheFragment.eyeNor, lightPos), 0.0f, 1.0f);
+		float diffuseTerm = 0.4 * glm::clamp(glm::dot(cacheFragment.eyeNor, glm::normalize(lightPos - cacheFragment.eyePos)), 0.0f, 1.0f);
 		float ambientTerm = 0.6f;
 		glm::vec3 L = glm::normalize(lightPos - cacheFragment.eyePos);
 		glm::vec3 N = cacheFragment.eyeNor;
@@ -1157,7 +1158,9 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
 		for (; it != itEnd; ++it) {
 			auto p = (it->second).begin();	// each primitive
 			auto pEnd = (it->second).end();
-			for (; p != pEnd; ++p) 
+			for (; p != pEnd; ++p)
+		//PrimitiveDevBufPointers *p;
+		//p = new PrimitiveDevBufPointers(s
 			{
 				dim3 numBlocksForVertices((p->numVertices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
 				dim3 numBlocksForIndices((p->numIndices + numThreadsPerBlock.x - 1) / numThreadsPerBlock.x);
@@ -1308,3 +1311,24 @@ void rasterizeFree() {
 	dev_flag = NULL;
     checkCUDAError("rasterize Free");
 }
+
+//__global__ void _AdvanceParticle(PrimitiveDevBufPointers *p, int toIndex)
+//{
+//
+//}
+
+//void paticleSystem(uchar4 *pbo, const glm::mat4 &MVP)
+//{
+//	int sideLength2d = 8;
+//    dim3 blockSize2d(sideLength2d, sideLength2d);
+//    dim3 blockCount2d((width  - 1) / blockSize2d.x + 1, (height - 1) / blockSize2d.y + 1);
+//
+//	dim3 numThreadsPerBlock(128);
+//	PrimitiveDevBufPointers *p[2];
+//	p[0] = new PrimitiveDevBufPointers();
+//	p[1] = new PrimitiveDevBufPointers();
+//
+//	_AdvanceParticle();
+//	
+//}
+
